@@ -110,8 +110,8 @@ available_funds = df['shortname'].unique()
 selected_funds = st.multiselect("Выберите ЗПИФы", available_funds, default=available_funds[:5])
 
 # === ВЫБОР ДАТЫ ===
-min_date = df['date'].min()
-max_date = df['date'].max()
+min_date = df['tradedate'].min()
+max_date = df['tradedate'].max()
 selected_date = st.slider("Выберите дату", min_value=min_date, max_value=max_date, value=max_date)
 
 # === ФИЛЬТРАЦИЯ ===
