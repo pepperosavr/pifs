@@ -210,9 +210,15 @@ else:
     )
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
-# 7b) Линейный график объемов за тот же период
-st.subheader("Динамика объема торгов")
+# 7b) Линейный график объемов за тот же период + два режима шкалы
+st.subheader("Динамика объема торгов (volume) по выбранным ЗПИФам")
 st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
+
+scale_mode = st.radio(
+    "Шкала по оси Y для объемов",
+    options=["Обычная", "Логарифмическая"],
+    horizontal=True,
+)
 
 vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
 vol_df = vol_df.dropna(subset=["volume"]).copy()
@@ -231,6 +237,24 @@ else:
         markers=True,
         labels={"volume": "Объем торгов", "tradedate": "Дата"},
     )
+
+    if scale_mode == "Логарифмическая":
+        # log не работает для нулей/отрицательных значений: отфильтруем нули
+        vol_pos = vol_df[vol_df["volume"] > 0].copy()
+        if vol_pos.empty:
+            st.warning("Для логарифмической шкалы нужны положительные объемы (volume > 0).")
+        else:
+            fig_vol_line = px.line(
+                vol_pos,
+                x="tradedate",
+                y="volume",
+                color="label",
+                hover_data=["shortname", "isin", "close"],
+                markers=True,
+                labels={"volume": "Объем торгов (лог. шкала)", "tradedate": "Дата"},
+            )
+            fig_vol_line.update_yaxes(type="log")
+
     st.plotly_chart(fig_vol_line, use_container_width=True)
 
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
