@@ -212,7 +212,7 @@ else:
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
 # 7b) Линейный график объемов за тот же период + два режима шкалы (и hover: линейно + log10)
-st.subheader("Динамика обьема торгов (volume) по выбранным ЗПИФам")
+st.subheader("Динамика обьема торгов")
 st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
 scale_mode = st.radio(
@@ -264,9 +264,9 @@ else:
         fig_vol_line.update_traces(
             hovertemplate=(
                 "Дата: %{x}<br>"
-                "Обьем (линейно): %{y:,.0f}<br>"
-                "log10(обьема): %{customdata[0]:.3f}<br>"
-                "Цена close: %{customdata[3]:,.2f}<br>"
+                "Объем торгов: %{y:,.0f}<br>"
+                "log10(обьема торгов): %{customdata[0]:.3f}<br>"
+                "Цена закрытия: %{customdata[3]:,.2f}<br>"
                 "ISIN: %{customdata[1]}<br>"
                 "<extra>%{fullData.name}</extra>"
             )
