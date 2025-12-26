@@ -184,7 +184,7 @@ period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <=
 # 7) Данные за период для линии close
 period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
 
-st.subheader("Изменение цены закрытия по выбранным ЗПИФам (в %)")
+st.subheader("Изменение цены закрытия (%)")
 st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
 if period_df.empty:
