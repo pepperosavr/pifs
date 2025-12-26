@@ -276,15 +276,16 @@ else:
         )
 
         # финальный вид таблицы
+        # финальныи вид таблицы
         summary_table = summary[["shortname", "volume_today", "change_pct"]].copy()
         summary_table = summary_table.rename(
             columns={
                 "shortname": "Название фонда",
-                "volume_today": "Обьем (за выбранную дату)",
-                "change_pct": "Изменение обьема, %",
+                "volume_today": "Объем (за выбранную дату)",
+                "change_pct": "Изменение объема, %",
             }
         )
-        summary_table = summary_table.sort_values("Обьем (за выбранную дату)", ascending=False)
+        summary_table = summary_table.sort_values("Объем (за выбранную дату)", ascending=False)
 
         # подпись с датами
         if cmp_date is None:
@@ -292,18 +293,18 @@ else:
         else:
             st.caption(f"Сравнение: {end_date} vs {cmp_date}")
 
-        # форматирование 
+        # форматирование (надежно, без Styler)
         display_table = summary_table.copy()
 
-display_table["Объем (за выбранную дату)"] = display_table["Объем (за выбранную дату)"].map(
-    lambda x: f"{x:,.0f}" if pd.notna(x) else "—"
-)
+        display_table["Объем (за выбранную дату)"] = display_table["Объем (за выбранную дату)"].map(
+            lambda x: f"{x:,.0f}" if pd.notna(x) else "—"
+        )
 
-display_table["Изменение объема, %"] = display_table["Изменение объема, %"].map(
-    lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
-)
+        display_table["Изменение объема, %"] = display_table["Изменение объема, %"].map(
+            lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
+        )
 
-st.dataframe(display_table, use_container_width=True)
+        st.dataframe(display_table, use_container_width=True)
 
     # --------- TAB 2: ЛОГАРИФМИЧЕСКИЙ ГРАФИК ---------
     with tab_log:
