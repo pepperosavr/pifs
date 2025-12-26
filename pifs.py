@@ -211,95 +211,95 @@ else:
     )
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
-# 7b) Обьемы: вместо линейного графика в обычном режиме делаем таблицу; логарифмический график сохраняем
-st.subheader("Обьем торгов")
+# 7b) Обороты: таблица (в рублях) + логарифмический график (в рублях)
+st.subheader("Оборот торгов (в рублях)")
 st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
 vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
-vol_df = vol_df.dropna(subset=["volume"]).copy()
+
+# В рублях можно посчитать только там, где есть и volume, и close
+vol_df = vol_df.dropna(subset=["volume", "close"]).copy()
+
+# Денежный оборот (приближенно): количество бумаг * цена закрытия
+vol_df["turnover_rub"] = vol_df["volume"] * vol_df["close"]
 
 vol_df["label"] = vol_df["shortname"].astype(str) + " (" + vol_df["isin"].astype(str) + ")"
 
 # Схлопываем повторы: одна строка на фонд и дату
+# оборот (руб) и объем (бумаг) суммируем, close берем "последнюю" (для hover/справки)
 vol_df = (
     vol_df.groupby(["label", "shortname", "isin", "tradedate"], as_index=False)
           .agg(
-              volume=("volume", "sum"),   # суммарный обьем за дату
-              close=("close", "last")     # цена закрытия (берем последнюю)
+              volume=("volume", "sum"),
+              turnover_rub=("turnover_rub", "sum"),
+              close=("close", "last"),
           )
 )
 
 vol_df = vol_df.sort_values(["label", "tradedate"])
 
 if vol_df.empty:
-    st.info("За выбранный период нет данных по volume.")
+    st.info("За выбранный период нет данных для расчета оборота в рублях.")
 else:
     tab_table, tab_log = st.tabs(["Таблица", "Логарифмический график"])
 
     # --------- TAB 1: ТАБЛИЦА ---------
     with tab_table:
         change_mode = st.radio(
-            "Изменение обьема считать как",
+            "Изменение оборота считать как",
             options=["День к дню", "Месяц к месяцу (21 торговый день)"],
             horizontal=True,
         )
 
-        # дата для сравнения
+        # дата для сравнения (по списку available_dates из выбранных фондов)
         date_to_idx = {d: i for i, d in enumerate(available_dates)}
         end_idx = date_to_idx[end_date]
 
         if change_mode == "День к дню":
             cmp_idx = end_idx - 1
         else:
-            cmp_idx = end_idx - 21  # приближение "месяц" через 21 торговый день
+            cmp_idx = end_idx - 21
 
         cmp_date = available_dates[cmp_idx] if cmp_idx >= 0 else None
 
-        # данные "за выбранную дату" (end_date) и "за дату сравнения"
-        today_df = vol_df[vol_df["tradedate"] == end_date][["label", "shortname", "isin", "volume"]].copy()
-        today_df = today_df.rename(columns={"volume": "volume_today"})
+        # данные "за выбранную дату" и "за дату сравнения"
+        today_df = vol_df[vol_df["tradedate"] == end_date][["label", "shortname", "turnover_rub"]].copy()
+        today_df = today_df.rename(columns={"turnover_rub": "turnover_today"})
 
         if cmp_date is not None:
-            prev_df = vol_df[vol_df["tradedate"] == cmp_date][["label", "volume"]].copy()
-            prev_df = prev_df.rename(columns={"volume": "volume_prev"})
+            prev_df = vol_df[vol_df["tradedate"] == cmp_date][["label", "turnover_rub"]].copy()
+            prev_df = prev_df.rename(columns={"turnover_rub": "turnover_prev"})
         else:
-            prev_df = pd.DataFrame(columns=["label", "volume_prev"])
+            prev_df = pd.DataFrame(columns=["label", "turnover_prev"])
 
         summary = today_df.merge(prev_df, on="label", how="left")
 
-        # процентное изменение: (today/prev - 1) * 100
-        # если volume_prev отсутствует или <=0, изменение не считаем
+        # процентное изменение оборота: (today/prev - 1) * 100
         summary["change_pct"] = np.where(
-            (summary["volume_prev"].notna()) & (summary["volume_prev"] > 0),
-            (summary["volume_today"] / summary["volume_prev"] - 1.0) * 100.0,
+            (summary["turnover_prev"].notna()) & (summary["turnover_prev"] > 0),
+            (summary["turnover_today"] / summary["turnover_prev"] - 1.0) * 100.0,
             np.nan,
         )
 
-        # финальный вид таблицы
-        # финальныи вид таблицы
-        summary_table = summary[["shortname", "volume_today", "change_pct"]].copy()
+        summary_table = summary[["shortname", "turnover_today", "change_pct"]].copy()
         summary_table = summary_table.rename(
             columns={
                 "shortname": "Название фонда",
-                "volume_today": "Объем (за выбранную дату)",
+                "turnover_today": "Объем в рублях (за выбранную дату)",
                 "change_pct": "Изменение объема, %",
             }
-        )
-        summary_table = summary_table.sort_values("Объем (за выбранную дату)", ascending=False)
+        ).sort_values("Объем в рублях (за выбранную дату)", ascending=False)
 
-        # подпись с датами
         if cmp_date is None:
             st.caption("Недостаточно исторических дат для расчета изменения.")
         else:
             st.caption(f"Сравнение: {end_date} vs {cmp_date}")
 
-        # форматирование (надежно, без Styler)
+        # надежное форматирование без Styler
         display_table = summary_table.copy()
-
-        display_table["Объем (за выбранную дату)"] = display_table["Объем (за выбранную дату)"].map(
+        display_table["Объем в рублях (за выбранную дату)"] = display_table["Объем в рублях (за выбранную дату)"].map(
             lambda x: f"{x:,.0f}" if pd.notna(x) else "—"
         )
-
         display_table["Изменение объема, %"] = display_table["Изменение объема, %"].map(
             lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
         )
@@ -308,35 +308,36 @@ else:
 
     # --------- TAB 2: ЛОГАРИФМИЧЕСКИЙ ГРАФИК ---------
     with tab_log:
-        vol_pos = vol_df[vol_df["volume"] > 0].copy()
-        if vol_pos.empty:
-            st.warning("Для логарифмического графика нужны положительные обьемы (volume > 0).")
+        rub_pos = vol_df[vol_df["turnover_rub"] > 0].copy()
+        if rub_pos.empty:
+            st.warning("Для логарифмического графика нужны положительные значения оборота (turnover_rub > 0).")
             st.stop()
 
-        vol_pos["log10_volume"] = np.log10(vol_pos["volume"])
+        rub_pos["log10_turnover"] = np.log10(rub_pos["turnover_rub"])
 
-        fig_vol_line = px.line(
-            vol_pos,
+        fig_rub = px.line(
+            rub_pos,
             x="tradedate",
-            y="volume",  # значение остается линейным, ось делаем логарифмической
+            y="turnover_rub",
             color="label",
-            custom_data=["log10_volume", "isin", "shortname", "close"],
+            custom_data=["log10_turnover", "isin", "shortname", "close", "volume"],
             markers=True,
-            labels={"volume": "Обьем торгов", "tradedate": "Дата"},
+            labels={"turnover_rub": "Оборот, руб", "tradedate": "Дата"},
         )
-        fig_vol_line.update_yaxes(type="log")
+        fig_rub.update_yaxes(type="log")
 
-        # Hover: показываем и линейное значение volume, и log10(volume)
-        fig_vol_line.update_traces(
+        fig_rub.update_traces(
             hovertemplate=(
                 "Дата: %{x}<br>"
-                "Обьем торгов: %{y:,.0f}<br>"
-                "log10(обьема): %{customdata[0]:.3f}<br>"
-                "Цена закрытия: %{customdata[3]:,.2f}<br>"
+                "Оборот (руб): %{y:,.0f}<br>"
+                "log10(оборота): %{customdata[0]:.3f}<br>"
+                "Цена close: %{customdata[3]:,.2f}<br>"
+                "Объем (бумаг): %{customdata[4]:,.0f}<br>"
                 "ISIN: %{customdata[1]}<br>"
                 "<extra>%{fullData.name}</extra>"
             )
         )
 
-        st.plotly_chart(fig_vol_line, use_container_width=True)
+        st.plotly_chart(fig_rub, use_container_width=True)
+        
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
