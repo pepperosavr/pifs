@@ -110,17 +110,16 @@ available_funds = df['shortname'].unique()
 selected_funds = st.multiselect("Выберите ЗПИФы", available_funds, default=available_funds[:5])
 
 # === ВЫБОР ДАТЫ ===
-min_date = df['tradedate'].min()
-max_date = df['tradedate'].max()
+min_date = pd.to_datetime(df['tradedate']).min()
+max_date = pd.to_datetime(df['tradedate']).max()
 selected_date = st.slider("Выберите дату", min_value=min_date, max_value=max_date, value=max_date)
 
 # === ФИЛЬТРАЦИЯ ===
-filtered_df = df[(df['shortname'].isin(selected_funds)) & (df['date'] == selected_date)]
+filtered_df = df[(df['shortname'].isin(selected_funds)) & (pd.to_datetime(df['tradedate']) == selected_date)]
 
 # === ГРАФИК ===
 st.subheader("Объём торгов по выбранным ЗПИФам")
 fig = px.bar(filtered_df, x='shortname', y='volume', hover_data=['isin', 'close'], color='shortname')
 st.plotly_chart(fig, use_container_width=True)
-
 
 
