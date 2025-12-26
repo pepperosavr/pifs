@@ -211,15 +211,9 @@ else:
     )
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
-# 7b) Линейный график объемов за тот же период + два режима шкалы (и hover: линейно + log10)
-st.subheader("Динамика обьема торгов")
+# 7b) Обьемы: вместо линейного графика в обычном режиме делаем таблицу; логарифмический график сохраняем
+st.subheader("Обьем торгов (volume) по выбранным ЗПИФам")
 st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
-
-scale_mode = st.radio(
-    "Шкала по оси Y для обьемов",
-    options=["Обычная", "Логарифмическая"],
-    horizontal=True,
-)
 
 vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
 vol_df = vol_df.dropna(subset=["volume"]).copy()
@@ -229,22 +223,80 @@ vol_df = vol_df.sort_values(["label", "tradedate"])
 if vol_df.empty:
     st.info("За выбранный период нет данных по volume.")
 else:
-    if scale_mode == "Обычная":
-        fig_vol_line = px.line(
-            vol_df,
-            x="tradedate",
-            y="volume",
-            color="label",
-            hover_data=["shortname", "isin", "close"],
-            markers=True,
-            labels={"volume": "Обьем торгов", "tradedate": "Дата"},
+    tab_table, tab_log = st.tabs(["Таблица", "Логарифмический график"])
+
+    # --------- TAB 1: ТАБЛИЦА ---------
+    with tab_table:
+        change_mode = st.radio(
+            "Изменение обьема считать как",
+            options=["День к дню", "Месяц к месяцу (21 торговый день)"],
+            horizontal=True,
         )
 
-    else:  # Логарифмическая
-        # log не работает для нулей/отрицательных значений: оставляем только volume > 0
+        # дата для сравнения
+        date_to_idx = {d: i for i, d in enumerate(available_dates)}
+        end_idx = date_to_idx[end_date]
+
+        if change_mode == "День к дню":
+            cmp_idx = end_idx - 1
+        else:
+            cmp_idx = end_idx - 21  # приближение "месяц" через 21 торговый день
+
+        cmp_date = available_dates[cmp_idx] if cmp_idx >= 0 else None
+
+        # данные "за выбранную дату" (end_date) и "за дату сравнения"
+        today_df = vol_df[vol_df["tradedate"] == end_date][["label", "shortname", "isin", "volume"]].copy()
+        today_df = today_df.rename(columns={"volume": "volume_today"})
+
+        if cmp_date is not None:
+            prev_df = vol_df[vol_df["tradedate"] == cmp_date][["label", "volume"]].copy()
+            prev_df = prev_df.rename(columns={"volume": "volume_prev"})
+        else:
+            prev_df = pd.DataFrame(columns=["label", "volume_prev"])
+
+        summary = today_df.merge(prev_df, on="label", how="left")
+
+        # процентное изменение: (today/prev - 1) * 100
+        # если volume_prev отсутствует или <=0, изменение не считаем
+        summary["change_pct"] = np.where(
+            (summary["volume_prev"].notna()) & (summary["volume_prev"] > 0),
+            (summary["volume_today"] / summary["volume_prev"] - 1.0) * 100.0,
+            np.nan,
+        )
+
+        # финальный вид таблицы
+        summary_table = summary[["shortname", "volume_today", "change_pct"]].copy()
+        summary_table = summary_table.rename(
+            columns={
+                "shortname": "Название фонда",
+                "volume_today": "Обьем (за выбранную дату)",
+                "change_pct": "Изменение обьема, %",
+            }
+        )
+        summary_table = summary_table.sort_values("Обьем (за выбранную дату)", ascending=False)
+
+        # подпись с датами
+        if cmp_date is None:
+            st.caption("Недостаточно исторических дат для расчета изменения.")
+        else:
+            st.caption(f"Сравнение: {end_date} vs {cmp_date}")
+
+        # форматирование (Streamlit поддерживает pandas Styler)
+        st.dataframe(
+            summary_table.style.format(
+                {
+                    "Обьем (за выбранную дату)": "{:,.0f}",
+                    "Изменение обьема, %": "{:+.1f}",
+                }
+            ),
+            use_container_width=True,
+        )
+
+    # --------- TAB 2: ЛОГАРИФМИЧЕСКИЙ ГРАФИК ---------
+    with tab_log:
         vol_pos = vol_df[vol_df["volume"] > 0].copy()
         if vol_pos.empty:
-            st.warning("Для логарифмической шкалы нужны положительные обьемы (volume > 0).")
+            st.warning("Для логарифмического графика нужны положительные обьемы (volume > 0).")
             st.stop()
 
         vol_pos["log10_volume"] = np.log10(vol_pos["volume"])
@@ -264,14 +316,13 @@ else:
         fig_vol_line.update_traces(
             hovertemplate=(
                 "Дата: %{x}<br>"
-                "Объем торгов: %{y:,.0f}<br>"
-                "log10(обьема торгов): %{customdata[0]:.3f}<br>"
-                "Цена закрытия: %{customdata[3]:,.2f}<br>"
+                "Обьем (линейно): %{y:,.0f}<br>"
+                "log10(обьема): %{customdata[0]:.3f}<br>"
+                "Цена close: %{customdata[3]:,.2f}<br>"
                 "ISIN: %{customdata[1]}<br>"
                 "<extra>%{fullData.name}</extra>"
             )
         )
 
-    st.plotly_chart(fig_vol_line, use_container_width=True)
-
+        st.plotly_chart(fig_vol_line, use_container_width=True)
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
