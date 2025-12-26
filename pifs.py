@@ -210,20 +210,27 @@ else:
     )
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
-# 8) Объемы торгов на выбранную конечную дату (как у вас было)
-daily_df = df_sel[df_sel["tradedate"] == end_date].copy()
+# 7b) Линейный график объемов за тот же период
+st.subheader("Динамика объема торгов")
+st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
-st.subheader("Объем торгов на выбранную дату")
-if daily_df.empty:
-    st.info("На выбранную дату нет данных по выбранным ЗПИФам.")
+vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+vol_df = vol_df.dropna(subset=["volume"]).copy()
+vol_df["label"] = vol_df["shortname"].astype(str) + " (" + vol_df["isin"].astype(str) + ")"
+vol_df = vol_df.sort_values(["label", "tradedate"])
+
+if vol_df.empty:
+    st.info("За выбранный период нет данных по volume.")
 else:
-    fig_vol = px.bar(
-        daily_df,
-        x="shortname",
+    fig_vol_line = px.line(
+        vol_df,
+        x="tradedate",
         y="volume",
-        hover_data=["isin", "close", "tradedate"],
-        color="shortname",
+        color="label",
+        hover_data=["shortname", "isin", "close"],
+        markers=True,
+        labels={"volume": "Объем торгов", "tradedate": "Дата"},
     )
-    st.plotly_chart(fig_vol, use_container_width=True)
+    st.plotly_chart(fig_vol_line, use_container_width=True)
 
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
