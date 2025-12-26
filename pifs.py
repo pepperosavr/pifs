@@ -212,7 +212,7 @@ else:
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
 # 7b) Обороты: таблица (в рублях) + логарифмический график (в рублях)
-st.subheader("Оборот торгов (в рублях)")
+st.subheader("Оборот торгов")
 st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
 vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
