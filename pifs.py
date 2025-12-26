@@ -25,11 +25,11 @@ API_LOGIN = get_secret("API_LOGIN", "accentam-api-test1")
 API_PASS  = get_secret("API_PASS",  "652Dsw")
 
 ZPIF_SECIDS = [
-    "RU000A105328",
-    "RU000A0JRHC0",
-    "RU000A1034U7",
-    "RU000A10A117",
-    "RU000A100WZ5",
+    "RU000A105328", # парус
+    "RU000A0JRHC0", # атриум
+    "RU000A1034U7", # ар бизн
+    "RU000A1099U0", # совр 9
+    "RU000A100WZ5", # акцент
 ]
 
 # -----------------------
