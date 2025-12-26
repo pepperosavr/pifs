@@ -210,12 +210,12 @@ else:
     )
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
-# 7b) Линейный график объемов за тот же период + два режима шкалы
-st.subheader("Динамика объема торгов (volume) по выбранным ЗПИФам")
+# 7b) Линейный график объемов за тот же период + два режима шкалы (и hover: линейно + log10)
+st.subheader("Динамика обьема торгов (volume) по выбранным ЗПИФам")
 st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
 scale_mode = st.radio(
-    "Шкала по оси Y для объемов",
+    "Шкала по оси Y для обьемов",
     options=["Обычная", "Логарифмическая"],
     horizontal=True,
 )
@@ -228,45 +228,49 @@ vol_df = vol_df.sort_values(["label", "tradedate"])
 if vol_df.empty:
     st.info("За выбранный период нет данных по volume.")
 else:
-    fig_vol_line = px.line(
-        vol_df,
-        x="tradedate",
-        y="volume",
-        color="label",
-        hover_data=["shortname", "isin", "close"],
-        markers=True,
-        labels={"volume": "Объем торгов", "tradedate": "Дата"},
-    )
+    if scale_mode == "Обычная":
+        fig_vol_line = px.line(
+            vol_df,
+            x="tradedate",
+            y="volume",
+            color="label",
+            hover_data=["shortname", "isin", "close"],
+            markers=True,
+            labels={"volume": "Обьем торгов", "tradedate": "Дата"},
+        )
 
-    if scale_mode == "Логарифмическая":
-    # log не работает для нулей/отрицательных значений: оставляем только volume > 0
-    vol_pos = vol_df[vol_df["volume"] > 0].copy()
-    if vol_pos.empty:
-        st.warning("Для логарифмической шкалы нужны положительные объемы (volume > 0).")
-    else:
+    else:  # Логарифмическая
+        # log не работает для нулей/отрицательных значений: оставляем только volume > 0
+        vol_pos = vol_df[vol_df["volume"] > 0].copy()
+        if vol_pos.empty:
+            st.warning("Для логарифмической шкалы нужны положительные обьемы (volume > 0).")
+            st.stop()
+
         vol_pos["log10_volume"] = np.log10(vol_pos["volume"])
 
         fig_vol_line = px.line(
             vol_pos,
             x="tradedate",
-            y="volume",              # В данных остается линейный volume
+            y="volume",  # значение остается линейным, ось делаем логарифмической
             color="label",
             custom_data=["log10_volume", "isin", "shortname", "close"],
             markers=True,
-            labels={"volume": "Объем торгов", "tradedate": "Дата"},
+            labels={"volume": "Обьем торгов", "tradedate": "Дата"},
         )
-        fig_vol_line.update_yaxes(type="log")  # Логарифмическая шкала оси
+        fig_vol_line.update_yaxes(type="log")
 
-        # Hover показывает и линейный volume, и log10(volume)
+        # Hover: показываем и линейное значение volume, и log10(volume)
         fig_vol_line.update_traces(
             hovertemplate=(
                 "Дата: %{x}<br>"
-                "Объем (линейно): %{y:,.0f}<br>"
-                "log10(объема): %{customdata[0]:.3f}<br>"
+                "Обьем (линейно): %{y:,.0f}<br>"
+                "log10(обьема): %{customdata[0]:.3f}<br>"
                 "Цена close: %{customdata[3]:,.2f}<br>"
                 "ISIN: %{customdata[1]}<br>"
                 "<extra>%{fullData.name}</extra>"
             )
         )
+
+    st.plotly_chart(fig_vol_line, use_container_width=True)
 
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
