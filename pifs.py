@@ -294,14 +294,14 @@ else:
 
         # форматирование (Streamlit поддерживает pandas Styler)
         st.dataframe(
-            summary_table.style.format(
-                {
-                    "Обьем (за выбранную дату)": "{:,.0f}",
-                    "Изменение обьема, %": "{:+.1f}",
-                }
-            ),
-            use_container_width=True,
-        )
+    summary_table.style.format(
+        {
+            "Обьем за выбранную дату": "{:,.0f}",
+            "Изменение обьема": "{:+.1f}%",
+        }
+    ),
+    use_container_width=True,
+)
 
     # --------- TAB 2: ЛОГАРИФМИЧЕСКИЙ ГРАФИК ---------
     with tab_log:
@@ -327,9 +327,9 @@ else:
         fig_vol_line.update_traces(
             hovertemplate=(
                 "Дата: %{x}<br>"
-                "Обьем (линейно): %{y:,.0f}<br>"
+                "Обьем торгов: %{y:,.0f}<br>"
                 "log10(обьема): %{customdata[0]:.3f}<br>"
-                "Цена close: %{customdata[3]:,.2f}<br>"
+                "Цена закрытия: %{customdata[3]:,.2f}<br>"
                 "ISIN: %{customdata[1]}<br>"
                 "<extra>%{fullData.name}</extra>"
             )
