@@ -181,21 +181,34 @@ start_date = available_dates[start_idx]
 # 7) Данные за период для линии close
 period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
 
-st.subheader("Динамика цены закрытия по выбранным ЗПИФам")
+# 7) Данные за период для линии close
+period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+
+st.subheader("Изменение цены закрытия по выбранным ЗПИФам (в %)")
 st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
 if period_df.empty:
     st.info("За выбранный период нет данных.")
 else:
-    fig_close = px.line(
+    # Чтобы не схлопывались фонды с одинаковым shortname, используем label = shortname + (isin)
+    period_df = period_df.dropna(subset=["close"]).copy()
+    period_df["label"] = period_df["shortname"].astype(str) + " (" + period_df["isin"].astype(str) + ")"
+    period_df = period_df.sort_values(["label", "tradedate"])
+
+    # Накопленное изменение цены к первой доступной дате в окне
+    base_close = period_df.groupby("label")["close"].transform("first")
+    period_df["close_change_pct"] = (period_df["close"] / base_close - 1.0) * 100.0
+
+    fig_close_pct = px.line(
         period_df,
         x="tradedate",
-        y="close",
-        color="shortname",
-        hover_data=["isin", "volume"],
+        y="close_change_pct",
+        color="label",
+        hover_data=["shortname", "isin", "close", "volume"],
         markers=True,
+        labels={"close_change_pct": "Изменение цены, %", "tradedate": "Дата"},
     )
-    st.plotly_chart(fig_close, use_container_width=True)
+    st.plotly_chart(fig_close_pct, use_container_width=True)
 
 # 8) Объемы торгов на выбранную конечную дату (как у вас было)
 daily_df = df_sel[df_sel["tradedate"] == end_date].copy()
