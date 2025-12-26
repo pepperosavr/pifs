@@ -217,7 +217,18 @@ st.caption(f"Период: {start_date} — {end_date} (торговых дне�
 
 vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
 vol_df = vol_df.dropna(subset=["volume"]).copy()
+
 vol_df["label"] = vol_df["shortname"].astype(str) + " (" + vol_df["isin"].astype(str) + ")"
+
+# Схлопываем повторы: одна строка на фонд и дату
+vol_df = (
+    vol_df.groupby(["label", "shortname", "isin", "tradedate"], as_index=False)
+          .agg(
+              volume=("volume", "sum"),   # суммарный обьем за дату
+              close=("close", "last")     # цена закрытия (берем последнюю)
+          )
+)
+
 vol_df = vol_df.sort_values(["label", "tradedate"])
 
 if vol_df.empty:
