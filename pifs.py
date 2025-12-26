@@ -134,7 +134,62 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
 # -----------------------
 # Streamlit UI
 # -----------------------
-st.title("Торги ЗПИФ: объем по выбранной дате")
+st.title("Торги ЗПИФ")
+
+# === ДАННЫЕ ТОЛЬКО ПО ВЫБРАННЫМ ФОНДАМ ===
+df_sel = df[df["shortname"].isin(selected_funds)].copy()
+
+# На всякий случай: сортировка по дате
+df_sel = df_sel.sort_values(["tradedate", "shortname"])
+
+# Список доступных торговых дат (только из данных)
+available_dates = sorted(df_sel["tradedate"].dropna().unique().tolist())
+if len(available_dates) == 0:
+    st.warning("Нет дат для выбранных ЗПИФов. Проверьте фильтр.")
+    st.stop()
+
+# === ПОЛЗУНОК: КОНЕЧНАЯ ДАТА ===
+end_date = st.select_slider(
+    "Конечная дата",
+    options=available_dates,
+    value=available_dates[-1],
+)
+
+# === ПОЛЗУНОК: ДЛИНА ПЕРИОДА (В ТОРГОВЫХ ДНЯХ) ===
+max_window = min(252, len(available_dates))  # 252 ~ 1 торговый год
+window = st.slider(
+    "Длина периода (торговые дни)",
+    min_value=5,
+    max_value=max_window,
+    value=min(30, max_window),
+    step=1,
+)
+
+# Индексы дат, чтобы корректно вычислять старт периода
+date_to_idx = {d: i for i, d in enumerate(available_dates)}
+end_idx = date_to_idx[end_date]
+start_idx = max(0, end_idx - window + 1)
+start_date = available_dates[start_idx]
+
+# === ФИЛЬТРАЦИЯ ПО ПЕРИОДУ ===
+period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+
+# === ГРАФИК ЦЕНЫ close ЗА ПЕРИОД ===
+st.subheader("Динамика цены close по выбранным ЗПИФам")
+st.caption(f"Период: {start_date} — {end_date} (всего торговых дней в окне: {window})")
+
+if period_df.empty:
+    st.info("За выбранный период нет данных (проверьте период и набор фондов).")
+else:
+    fig_close = px.line(
+        period_df,
+        x="tradedate",
+        y="close",
+        color="shortname",
+        hover_data=["isin", "volume"],
+        markers=True,
+    )
+    st.plotly_chart(fig_close, use_container_width=True)
 
 # Автоматическое обновление dateTo: текущая дата в UTC (до конца дня)
 utc_now = datetime.now(timezone.utc)
