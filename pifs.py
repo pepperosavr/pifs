@@ -251,26 +251,64 @@ else:
             horizontal=True,
         )
 
-        # дата для сравнения (по списку available_dates из выбранных фондов)
+         # индексы дат (available_dates уже соответствует выбранным фондам)
         date_to_idx = {d: i for i, d in enumerate(available_dates)}
         end_idx = date_to_idx[end_date]
 
         if change_mode == "День к дню":
-            cmp_idx = end_idx - 1
-        else:
-            cmp_idx = end_idx - 21
+            # текущии день = end_date, предыдущии день = end_idx - 1
+            if end_idx - 1 < 0:
+                st.caption("Недостаточно исторических дат для сравнения день к дню.")
+                st.stop()
 
-        cmp_date = available_dates[cmp_idx] if cmp_idx >= 0 else None
+            cmp_date = available_dates[end_idx - 1]
 
-        # данные "за выбранную дату" и "за дату сравнения"
-        today_df = vol_df[vol_df["tradedate"] == end_date][["label", "shortname", "turnover_rub"]].copy()
-        today_df = today_df.rename(columns={"turnover_rub": "turnover_today"})
+            today_df = vol_df[vol_df["tradedate"] == end_date][["label", "shortname", "turnover_rub"]].copy()
+            today_df = today_df.rename(columns={"turnover_rub": "turnover_today"})
 
-        if cmp_date is not None:
             prev_df = vol_df[vol_df["tradedate"] == cmp_date][["label", "turnover_rub"]].copy()
             prev_df = prev_df.rename(columns={"turnover_rub": "turnover_prev"})
+
+            st.caption(f"Сравнение: {end_date} vs {cmp_date}")
+
         else:
-            prev_df = pd.DataFrame(columns=["label", "turnover_prev"])
+            # "месяц" = 21 торговыи день: считаем сумму оборота по окну
+            if end_idx - 21 + 1 < 0:
+                st.caption("Недостаточно исторических дат для расчета окна 21 торговыи день.")
+                st.stop()
+
+            # окно текущего "месяца"
+            cur_start_idx = end_idx - 21 + 1
+            cur_dates = set(available_dates[cur_start_idx : end_idx + 1])
+
+            # окно предыдущего "месяца"
+            prev_end_idx = cur_start_idx - 1
+            prev_start_idx = prev_end_idx - 21 + 1
+            if prev_start_idx < 0:
+                st.caption("Недостаточно исторических дат для сравнения двух окон по 21 торговому дню.")
+                st.stop()
+
+            prev_dates = set(available_dates[prev_start_idx : prev_end_idx + 1])
+
+            today_df = (
+                vol_df[vol_df["tradedate"].isin(cur_dates)]
+                .groupby(["label", "shortname"], as_index=False)["turnover_rub"]
+                .sum()
+                .rename(columns={"turnover_rub": "turnover_today"})
+            )
+
+            prev_df = (
+                vol_df[vol_df["tradedate"].isin(prev_dates)]
+                .groupby(["label"], as_index=False)["turnover_rub"]
+                .sum()
+                .rename(columns={"turnover_rub": "turnover_prev"})
+            )
+
+            st.caption(
+                f"Окна по 21 торговому дню: "
+                f"{available_dates[cur_start_idx]} — {end_date} vs "
+                f"{available_dates[prev_start_idx]} — {available_dates[prev_end_idx]}"
+            )
 
         summary = today_df.merge(prev_df, on="label", how="left")
 
@@ -285,22 +323,17 @@ else:
         summary_table = summary_table.rename(
             columns={
                 "shortname": "Название фонда",
-                "turnover_today": "Объем в рублях (за выбранную дату)",
-                "change_pct": "Изменение объема, %",
+                "turnover_today": "Обьем в рублях (текущии период)",
+                "change_pct": "Изменение обьема, %",
             }
-        ).sort_values("Объем в рублях (за выбранную дату)", ascending=False)
-
-        if cmp_date is None:
-            st.caption("Недостаточно исторических дат для расчета изменения.")
-        else:
-            st.caption(f"Сравнение: {end_date} vs {cmp_date}")
+        ).sort_values("Обьем в рублях (текущии период)", ascending=False)
 
         # надежное форматирование без Styler
         display_table = summary_table.copy()
-        display_table["Объем в рублях (за выбранную дату)"] = display_table["Объем в рублях (за выбранную дату)"].map(
+        display_table["Обьем в рублях (текущии период)"] = display_table["Обьем в рублях (текущии период)"].map(
             lambda x: f"{x:,.0f}" if pd.notna(x) else "—"
         )
-        display_table["Изменение объема, %"] = display_table["Изменение объема, %"].map(
+        display_table["Изменение обьема, %"] = display_table["Изменение обьема, %"].map(
             lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
         )
 
