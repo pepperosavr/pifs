@@ -292,17 +292,18 @@ else:
         else:
             st.caption(f"Сравнение: {end_date} vs {cmp_date}")
 
-        # форматирование (Streamlit поддерживает pandas Styler)
-        st.dataframe(
-    summary_table.style.format(
-        {
-            "Объем": "{:,.0f}",
-            "Изменение объема": "{:+.2f}%",
-        }
-    ),
-    use_container_width=True,
+        # форматирование 
+        display_table = summary_table.copy()
+
+display_table["Объем (за выбранную дату)"] = display_table["Объем (за выбранную дату)"].map(
+    lambda x: f"{x:,.0f}" if pd.notna(x) else "—"
 )
 
+display_table["Изменение объема, %"] = display_table["Изменение объема, %"].map(
+    lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
+)
+
+st.dataframe(display_table, use_container_width=True)
 
     # --------- TAB 2: ЛОГАРИФМИЧЕСКИЙ ГРАФИК ---------
     with tab_log:
