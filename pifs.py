@@ -239,22 +239,34 @@ else:
     )
 
     if scale_mode == "Логарифмическая":
-        # log не работает для нулей/отрицательных значений: отфильтруем нули
-        vol_pos = vol_df[vol_df["volume"] > 0].copy()
-        if vol_pos.empty:
-            st.warning("Для логарифмической шкалы нужны положительные объемы (volume > 0).")
-        else:
-            fig_vol_line = px.line(
-                vol_pos,
-                x="tradedate",
-                y="volume",
-                color="label",
-                hover_data=["shortname", "isin", "close"],
-                markers=True,
-                labels={"volume": "Объем торгов (лог. шкала)", "tradedate": "Дата"},
-            )
-            fig_vol_line.update_yaxes(type="log")
+    # log не работает для нулей/отрицательных значений: оставляем только volume > 0
+    vol_pos = vol_df[vol_df["volume"] > 0].copy()
+    if vol_pos.empty:
+        st.warning("Для логарифмической шкалы нужны положительные объемы (volume > 0).")
+    else:
+        vol_pos["log10_volume"] = np.log10(vol_pos["volume"])
 
-    st.plotly_chart(fig_vol_line, use_container_width=True)
+        fig_vol_line = px.line(
+            vol_pos,
+            x="tradedate",
+            y="volume",              # В данных остается линейный volume
+            color="label",
+            custom_data=["log10_volume", "isin", "shortname", "close"],
+            markers=True,
+            labels={"volume": "Объем торгов", "tradedate": "Дата"},
+        )
+        fig_vol_line.update_yaxes(type="log")  # Логарифмическая шкала оси
+
+        # Hover показывает и линейный volume, и log10(volume)
+        fig_vol_line.update_traces(
+            hovertemplate=(
+                "Дата: %{x}<br>"
+                "Объем (линейно): %{y:,.0f}<br>"
+                "log10(объема): %{customdata[0]:.3f}<br>"
+                "Цена close: %{customdata[3]:,.2f}<br>"
+                "ISIN: %{customdata[1]}<br>"
+                "<extra>%{fullData.name}</extra>"
+            )
+        )
 
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
