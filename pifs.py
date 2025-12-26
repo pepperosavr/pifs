@@ -26,7 +26,7 @@ API_PASS  = get_secret("API_PASS",  "652Dsw")
 
 ZPIF_SECIDS = [
     "RU000A105328",
-    "RU000A1099U0",
+    "RU000A0JRHC0",
     "RU000A1034U7",
     "RU000A10A117",
     "RU000A100WZ5",
@@ -181,7 +181,7 @@ start_date = available_dates[start_idx]
 # 7) Данные за период для линии close
 period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
 
-st.subheader("Динамика цены close по выбранным ЗПИФам")
+st.subheader("Динамика цены закрытия по выбранным ЗПИФам")
 st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
 if period_df.empty:
