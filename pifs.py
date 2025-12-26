@@ -337,7 +337,7 @@ else:
             lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
         )
 
-        st.dataframe(display_table, use_container_width=True)
+        st.dataframe(display_table, use_container_width=True, hide_index=True)
 
     # --------- TAB 2: ЛОГАРИФМИЧЕСКИЙ ГРАФИК ---------
     with tab_log:
