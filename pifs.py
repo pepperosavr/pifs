@@ -102,26 +102,25 @@ else:
     print("Ошибка авторизации")
 
 import streamlit as st
-import matplotlib.pyplot as plt
+import pandas as pd
+import plotly.express as px
 
-st.title("Динамика объема торгов по ЗПИФам")
+# === ВЫБОР ЗПИФОВ ===
+available_funds = df['shortname'].unique()
+selected_funds = st.multiselect("Выберите ЗПИФы", available_funds, default=available_funds[:5])
 
-st.dataframe(df)
+# === ВЫБОР ДАТЫ ===
+min_date = df['date'].min()
+max_date = df['date'].max()
+selected_date = st.slider("Выберите дату", min_value=min_date, max_value=max_date, value=max_date)
 
-df['tradedate'] = pd.to_datetime(df['tradedate'])
-df_grouped = df.groupby('tradedate')['volume'].sum().reset_index()
+# === ФИЛЬТРАЦИЯ ===
+filtered_df = df[(df['shortname'].isin(selected_funds)) & (df['date'] == selected_date)]
 
-fig, ax = plt.subplots()
-ax.plot(df_grouped['tradedate'], df_grouped['volume'], marker='o')
-ax.set_xlabel("Дата")
-ax.set_ylabel("Объем торгов")
-ax.set_title("Объем торгов по всем ЗПИФам")
-plt.xticks(rotation=45)
-plt.tight_layout()
-
-st.pyplot(fig)
-# In[ ]:
-
+# === ГРАФИК ===
+st.subheader("Объём торгов по выбранным ЗПИФам")
+fig = px.bar(filtered_df, x='shortname', y='volume', hover_data=['isin', 'close'], color='shortname')
+st.plotly_chart(fig, use_container_width=True)
 
 
 
