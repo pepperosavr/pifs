@@ -212,7 +212,7 @@ else:
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
 # 7b) Обьемы: вместо линейного графика в обычном режиме делаем таблицу; логарифмический график сохраняем
-st.subheader("Обьем торгов (volume) по выбранным ЗПИФам")
+st.subheader("Обьем торгов")
 st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
 vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
