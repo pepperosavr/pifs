@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 from datetime import datetime, timezone, date
+from pathlib import Path
 
 # -----------------------
 # Конфигурация
@@ -137,6 +138,16 @@ df = load_df(ZPIF_SECIDS, date_from, date_to)
 if df.empty:
     st.warning("Данных не найдено за выбранный период.")
     st.stop()
+
+# --- Сохранение текущих данных в CSV (снапшот на сегодня) ---
+out_dir = Path("snapshots")
+out_dir.mkdir(parents=True, exist_ok=True)
+
+snap_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+out_path = out_dir / f"zpif_history_{snap_date}.csv"
+
+df.to_csv(out_path, index=False, encoding="utf-8")
+print(f"Saved snapshot to: {out_path.resolve()}")
 
 # 2) Выбор фондов
 available_funds = sorted(df["shortname"].unique().tolist())
