@@ -109,9 +109,12 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     if not all_results:
         return pd.DataFrame(columns=["shortname", "isin", "volume", "close", "tradedate"])
 
-    df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "close", "tradedate"]]
-    df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
-    df["close"]  = pd.to_numeric(df["close"], errors="coerce")
+    df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "tradedate"]]
+
+    df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
+    df["value"]     = pd.to_numeric(df["value"], errors="coerce")        # денежныи оборот
+    df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")    # число сделок
+    df["close"]     = pd.to_numeric(df["close"], errors="coerce")
 
     # tradedate -> datetime.date (для корректной работы виджетов)
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
@@ -372,5 +375,41 @@ else:
         )
 
         st.plotly_chart(fig_rub, use_container_width=True)
+
+# 7c) Средний размер сделки: value / numtrades
+st.subheader("Средний размер сделки (руб/сделку)")
+st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
+
+avg_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+avg_df = avg_df.dropna(subset=["value", "numtrades"]).copy()
+
+avg_df["label"] = avg_df["shortname"].astype(str) + " (" + avg_df["isin"].astype(str) + ")"
+
+# Если на одну дату приходят дубли (по сессиям) — схлопываем
+avg_df = (
+    avg_df.groupby(["label", "shortname", "isin", "tradedate"], as_index=False)
+          .agg(
+              value=("value", "sum"),
+              numtrades=("numtrades", "sum"),
+          )
+)
+
+# Средний размер сделки (руб/сделку)
+avg_df = avg_df[avg_df["numtrades"] > 0].copy()
+avg_df["avg_trade_rub"] = avg_df["value"] / avg_df["numtrades"]
+
+if avg_df.empty:
+    st.info("Нет данных для расчета среднего размера сделки в выбранном периоде.")
+else:
+    fig_avg_trade = px.line(
+        avg_df.sort_values(["label", "tradedate"]),
+        x="tradedate",
+        y="avg_trade_rub",
+        color="label",
+        markers=True,
+        hover_data=["isin", "value", "numtrades"],
+        labels={"avg_trade_rub": "Средний размер сделки, руб", "tradedate": "Дата"},
+    )
+    st.plotly_chart(fig_avg_trade, use_container_width=True)
         
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
