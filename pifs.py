@@ -12,6 +12,8 @@ import streamlit as st
 import plotly.express as px
 from datetime import datetime, timezone, date
 from pathlib import Path
+SNAP_DIR = Path("data_snapshots")
+SNAP_DIR.mkdir(parents=True, exist_ok=True)
 
 # -----------------------
 # Конфигурация
@@ -103,6 +105,7 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     if not token:
         raise RuntimeError("Ошибка авторизации: не удалось получить токен")
 
+    
     all_results = []
     for chunk in chunk_list(secids, 100):
         all_results.extend(fetch_all_trading_results(token, chunk, date_from, date_to))
@@ -133,21 +136,65 @@ utc_now = datetime.now(timezone.utc)
 date_from = "2025-01-01T00:00:00Z"
 date_to   = utc_now.strftime("%Y-%m-%dT23:59:59Z")
 
-df = load_df(ZPIF_SECIDS, date_from, date_to)
+st.sidebar.markdown("### Данные")
+offline_mode = st.sidebar.toggle("Офлайн-режим (использовать снапшот)", value=False)
+
+snap_name = f"moex_history_{date_to[:10]}.csv"
+snap_path = SNAP_DIR / snap_name
+
+def _normalize_tradedate(df: pd.DataFrame) -> pd.DataFrame:
+    # гарантируем tradedate типа datetime.date
+    if "tradedate" in df.columns:
+        df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
+    return df
+
+def save_snapshot_csv(df: pd.DataFrame, snap_path: Path) -> None:
+    df.to_csv(snap_path, index=False, encoding="utf-8")
+
+def load_snapshot_csv(snap_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(snap_path)
+    return _normalize_tradedate(df)
+
+def latest_snapshot_path() -> Path | None:
+    snaps = sorted(SNAP_DIR.glob("moex_history_*.csv"))
+    return snaps[-1] if snaps else None
+
+df = pd.DataFrame()
+
+if offline_mode:
+    last_snap = latest_snapshot_path()
+    if last_snap is None:
+        st.error("Офлайн-режим включен, но снапшоты не найдены. Сначала сохраните данные сегодня.")
+        st.stop()
+    df = load_snapshot_csv(last_snap)
+    st.sidebar.caption(f"Источник: снапшот {last_snap.name}")
+else:
+    try:
+        df = load_df(ZPIF_SECIDS, date_from, date_to)
+        st.sidebar.caption("Источник: API")
+    except Exception as e:
+        last_snap = latest_snapshot_path()
+        if last_snap is None:
+            raise
+        st.warning("API недоступен, использован последний сохраненныи снапшот.")
+        df = load_snapshot_csv(last_snap)
+        st.sidebar.caption(f"Источник: снапшот {last_snap.name}")
 
 if df.empty:
     st.warning("Данных не найдено за выбранный период.")
     st.stop()
+st.sidebar.markdown("### Снапшот")
+if st.sidebar.button("Сохранить снапшот на диске (CSV)"):
+    save_snapshot_csv(df, snap_path)
+    st.sidebar.success(f"Сохранено: {snap_path.name}")
 
-# --- Сохранение текущих данных в CSV (снапшот на сегодня) ---
-out_dir = Path("snapshots")
-out_dir.mkdir(parents=True, exist_ok=True)
-
-snap_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-out_path = out_dir / f"zpif_history_{snap_date}.csv"
-
-df.to_csv(out_path, index=False, encoding="utf-8")
-print(f"Saved snapshot to: {out_path.resolve()}")
+csv_bytes = df.to_csv(index=False, encoding="utf-8").encode("utf-8")
+st.sidebar.download_button(
+    "Скачать снапшот (CSV)",
+    data=csv_bytes,
+    file_name=snap_name,
+    mime="text/csv",
+)
 
 # 2) Выбор фондов
 available_funds = sorted(df["shortname"].unique().tolist())
