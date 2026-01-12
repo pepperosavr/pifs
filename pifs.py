@@ -3,7 +3,6 @@
 
 # In[5]:
 
-
 import os
 import requests
 import numpy as np
@@ -12,8 +11,6 @@ import streamlit as st
 import plotly.express as px
 from datetime import datetime, timezone, date
 from pathlib import Path
-SNAP_DIR = Path("data_snapshots")
-SNAP_DIR.mkdir(parents=True, exist_ok=True)
 
 # -----------------------
 # Конфигурация
@@ -25,16 +22,27 @@ def get_secret(name: str, default: str = "") -> str:
         return str(st.secrets[name])
     return os.getenv(name, default)
 
-API_LOGIN = get_secret("API_LOGIN", "accentam-api1")
-API_PASS  = get_secret("API_PASS",  "653Bsw")
+API_LOGIN = get_secret("API_LOGIN", "accentam-api-test1")
+API_PASS  = get_secret("API_PASS",  "652Dsw")
 
-ZPIF_SECIDS = [
-    "RU000A105328", # парус
-    "RU000A0JRHC0", # атриум
-    "RU000A1034U7", # ар бизн
-    "RU000A1099U0", # совр 9
-    "RU000A100WZ5", # акцент
-]
+# 1) ТОЛЬКО НУЖНЫЕ ФОНДЫ (ISIN + человекочитаемые названия)
+FUND_MAP = {
+    "RU000A105328": "ПАРУС-ЛОГ",
+    "RU000A1068X9": "ПАРУС-ДВН",
+    "RU000A108UH0": "ПАРУС-КРАС",
+    "RU000A108VR7": "ПАРУС-МАКС",
+    "RU000A104KU3": "ПАРУС-НОРД",
+    "RU000A1022Z1": "ПАРУС-ОЗН",
+    "RU000A104172": "ПАРУС-СБЛ",
+    "RU000A108BZ2": "ПАРУС-ТРМ",
+    "RU000A10CFM8": "ПАРУС-ЗОЛЯ",
+    "RU000A100WZ5": "АКЦЕНТ IV",
+    "RU000A10DQF7": "Акцент 5",
+    "RU000A10A117": "ЗПИФ СМЛТ",
+    "RU000A1099U0": "ЗПИФСовр 9",
+}
+
+ZPIF_SECIDS = list(FUND_MAP.keys())
 
 # -----------------------
 # API helpers
@@ -90,7 +98,6 @@ def fetch_all_trading_results(token: str, instruments: list[str], date_from: str
         all_data.extend(page_data)
         page += 1
 
-        # защита от бесконечного цикла
         if len(page_data) < page_size:
             break
 
@@ -105,13 +112,12 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     if not token:
         raise RuntimeError("Ошибка авторизации: не удалось получить токен")
 
-    
     all_results = []
     for chunk in chunk_list(secids, 100):
         all_results.extend(fetch_all_trading_results(token, chunk, date_from, date_to))
 
     if not all_results:
-        return pd.DataFrame(columns=["shortname", "isin", "volume", "close", "tradedate"])
+        return pd.DataFrame(columns=["shortname", "fund", "isin", "volume", "value", "numtrades", "close", "tradedate"])
 
     df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "tradedate"]]
 
@@ -120,9 +126,11 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")    # число сделок
     df["close"]     = pd.to_numeric(df["close"], errors="coerce")
 
-    # tradedate -> datetime.date (для корректной работы виджетов)
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
-    df = df.dropna(subset=["shortname", "isin", "tradedate"])
+    df = df.dropna(subset=["isin", "tradedate"])
+
+    # Человекочитаемое имя фонда (если есть в маппинге)
+    df["fund"] = df["isin"].map(FUND_MAP).fillna(df["shortname"].astype(str))
 
     return df
 
@@ -131,343 +139,384 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
 # -----------------------
 st.title("Торги ЗПИФ")
 
-# 1) Сначала формируем период загрузки и грузим df
+# 2) КНОПКА-РЕЖИМ НАВЕРХУ: История / Сравнение сегодня vs пред. торговыи день
+mode = st.radio(
+    "Режим просмотра",
+    options=["История", "Сравнение (сегодня vs предыдущии торговыи день)"],
+    horizontal=True,
+)
+
+# Период загрузки (как было)
 utc_now = datetime.now(timezone.utc)
 date_from = "2025-01-01T00:00:00Z"
 date_to   = utc_now.strftime("%Y-%m-%dT23:59:59Z")
 
-st.sidebar.markdown("### Данные")
-offline_mode = st.sidebar.toggle("Офлайн-режим (использовать снапшот)", value=False)
-
-snap_name = f"moex_history_{date_to[:10]}.csv"
-snap_path = SNAP_DIR / snap_name
-
-def _normalize_tradedate(df: pd.DataFrame) -> pd.DataFrame:
-    # гарантируем tradedate типа datetime.date
-    if "tradedate" in df.columns:
-        df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
-    return df
-
-def save_snapshot_csv(df: pd.DataFrame, snap_path: Path) -> None:
-    df.to_csv(snap_path, index=False, encoding="utf-8")
-
-def load_snapshot_csv(snap_path: Path) -> pd.DataFrame:
-    df = pd.read_csv(snap_path)
-    return _normalize_tradedate(df)
-
-def latest_snapshot_path() -> Path | None:
-    snaps = sorted(SNAP_DIR.glob("moex_history_*.csv"))
-    return snaps[-1] if snaps else None
-
-df = pd.DataFrame()
-
-if offline_mode:
-    last_snap = latest_snapshot_path()
-    if last_snap is None:
-        st.error("Офлайн-режим включен, но снапшоты не найдены. Сначала сохраните данные сегодня.")
-        st.stop()
-    df = load_snapshot_csv(last_snap)
-    st.sidebar.caption(f"Источник: снапшот {last_snap.name}")
-else:
-    try:
-        df = load_df(ZPIF_SECIDS, date_from, date_to)
-        st.sidebar.caption("Источник: API")
-    except Exception as e:
-        last_snap = latest_snapshot_path()
-        if last_snap is None:
-            raise
-        st.warning("API недоступен, использован последний сохраненныи снапшот.")
-        df = load_snapshot_csv(last_snap)
-        st.sidebar.caption(f"Источник: снапшот {last_snap.name}")
+df = load_df(ZPIF_SECIDS, date_from, date_to)
 
 if df.empty:
-    st.warning("Данных не найдено за выбранный период.")
+    st.warning("Данных не найдено за выбранныи период.")
     st.stop()
-st.sidebar.markdown("### Снапшот")
-if st.sidebar.button("Сохранить снапшот на диске (CSV)"):
-    save_snapshot_csv(df, snap_path)
-    st.sidebar.success(f"Сохранено: {snap_path.name}")
 
-csv_bytes = df.to_csv(index=False, encoding="utf-8").encode("utf-8")
-st.sidebar.download_button(
-    "Скачать снапшот (CSV)",
-    data=csv_bytes,
-    file_name=snap_name,
-    mime="text/csv",
-)
+# Снапшот (как было, без кнопки)
+out_dir = Path("snapshots")
+out_dir.mkdir(parents=True, exist_ok=True)
+snap_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+out_path = out_dir / f"zpif_history_{snap_date}.csv"
+df.to_csv(out_path, index=False, encoding="utf-8")
+print(f"Saved snapshot to: {out_path.resolve()}")
 
-# 2) Выбор фондов
-available_funds = sorted(df["shortname"].unique().tolist())
+# Выбор фондов (оставляем)
+available_funds = sorted(df["fund"].unique().tolist())
 selected_funds = st.multiselect(
-    "Выберите ЗПИФы",
+    "Выберите фонды",
     available_funds,
-    default=available_funds[: min(5, len(available_funds))],
+    default=available_funds,   # по умолчанию все 13
 )
 
-df_sel = df[df["shortname"].isin(selected_funds)].copy()
-df_sel = df_sel.sort_values(["tradedate", "shortname"])
+df_sel = df[df["fund"].isin(selected_funds)].copy()
+df_sel = df_sel.sort_values(["tradedate", "fund"])
 
-# 3) Даты только по выбранным фондам (чтобы ползунок не показывал даты без данных)
-available_dates = sorted(df_sel["tradedate"].dropna().unique().tolist())
-if not available_dates:
-    st.warning("Нет дат для выбранных ЗПИФов. Проверьте фильтр фондов.")
+if df_sel.empty:
+    st.warning("По выбранным фондам нет данных.")
     st.stop()
 
-# 4) Ползунок конечной даты (по торговым датам)
-end_date: date = st.select_slider(
-    "Конечная дата",
-    options=available_dates,
-    value=available_dates[-1],
-)
+# Единая метка для графиков/таблиц
+df_sel["label"] = df_sel["fund"].astype(str) + " (" + df_sel["isin"].astype(str) + ")"
 
-# 5) Ползунок длины периода (в торговых днях) с защитой от коротких рядов
-max_window = min(252, len(available_dates))
-if max_window <= 1:
-    window = 1
-else:
-    default_window = min(30, max_window)
-    window = st.slider(
-        "Длина периода (торговые дни)",
-        min_value=2,
-        max_value=max_window,
-        value=default_window,
-        step=1,
+# ---------- РЕЖИМ 1: ИСТОРИЯ ----------
+if mode == "История":
+    # Даты только по выбранным фондам
+    available_dates = sorted(df_sel["tradedate"].dropna().unique().tolist())
+    if not available_dates:
+        st.warning("Нет дат для выбранных фондов.")
+        st.stop()
+
+    # Конечная дата
+    end_date: date = st.select_slider(
+        "Конечная дата",
+        options=available_dates,
+        value=available_dates[-1],
     )
 
-# 6) Рассчитываем старт окна
-date_to_idx = {d: i for i, d in enumerate(available_dates)}
-end_idx = date_to_idx[end_date]
-start_idx = max(0, end_idx - window + 1)
-start_date = available_dates[start_idx]
-
-# 7) Данные за период для линии close
-period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
-
-# 7) Данные за период для линии close
-period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
-
-st.subheader("Изменение цены закрытия (%)")
-st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
-
-if period_df.empty:
-    st.info("За выбранный период нет данных.")
-else:
-    # Чтобы не схлопывались фонды с одинаковым shortname, используем label = shortname + (isin)
-    period_df = period_df.dropna(subset=["close"]).copy()
-    period_df["label"] = period_df["shortname"].astype(str) + " (" + period_df["isin"].astype(str) + ")"
-    period_df = period_df.sort_values(["label", "tradedate"])
-
-    # Накопленное изменение цены к первой доступной дате в окне
-    base_close = period_df.groupby("label")["close"].transform("first")
-    period_df["close_change_pct"] = (period_df["close"] / base_close - 1.0) * 100.0
-
-    fig_close_pct = px.line(
-        period_df,
-        x="tradedate",
-        y="close_change_pct",
-        color="label",
-        hover_data=["shortname", "isin", "close", "volume"],
-        markers=True,
-        labels={"close_change_pct": "Изменение цены, %", "tradedate": "Дата"},
-    )
-    st.plotly_chart(fig_close_pct, use_container_width=True)
-
-# 7b) Обороты: таблица (в рублях) + логарифмический график (в рублях)
-st.subheader("Оборот торгов")
-st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
-
-vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
-
-# В рублях можно посчитать только там, где есть и volume, и close
-vol_df = vol_df.dropna(subset=["volume", "close"]).copy()
-
-# Денежный оборот (приближенно): количество бумаг * цена закрытия
-vol_df["turnover_rub"] = vol_df["volume"] * vol_df["close"]
-
-vol_df["label"] = vol_df["shortname"].astype(str) + " (" + vol_df["isin"].astype(str) + ")"
-
-# Схлопываем повторы: одна строка на фонд и дату
-# оборот (руб) и объем (бумаг) суммируем, close берем "последнюю" (для hover/справки)
-vol_df = (
-    vol_df.groupby(["label", "shortname", "isin", "tradedate"], as_index=False)
-          .agg(
-              volume=("volume", "sum"),
-              turnover_rub=("turnover_rub", "sum"),
-              close=("close", "last"),
-          )
-)
-
-vol_df = vol_df.sort_values(["label", "tradedate"])
-
-if vol_df.empty:
-    st.info("За выбранный период нет данных для расчета оборота в рублях.")
-else:
-    tab_table, tab_log = st.tabs(["Таблица", "Логарифмический график"])
-
-    # --------- TAB 1: ТАБЛИЦА ---------
-    with tab_table:
-        change_mode = st.radio(
-            "Изменение оборота считать как",
-            options=["День к дню", "Месяц к месяцу (21 торговый день)"],
-            horizontal=True,
+    # Длина периода
+    max_window = min(252, len(available_dates))
+    if max_window <= 1:
+        window = 1
+    else:
+        default_window = min(30, max_window)
+        window = st.slider(
+            "Длина периода (торговые дни)",
+            min_value=2,
+            max_value=max_window,
+            value=default_window,
+            step=1,
         )
 
-         # индексы дат (available_dates уже соответствует выбранным фондам)
-        date_to_idx = {d: i for i, d in enumerate(available_dates)}
-        end_idx = date_to_idx[end_date]
+    # Старт периода
+    date_to_idx = {d: i for i, d in enumerate(available_dates)}
+    end_idx = date_to_idx[end_date]
+    start_idx = max(0, end_idx - window + 1)
+    start_date = available_dates[start_idx]
 
-        if change_mode == "День к дню":
-            # текущии день = end_date, предыдущии день = end_idx - 1
-            if end_idx - 1 < 0:
-                st.caption("Недостаточно исторических дат для сравнения день к дню.")
-                st.stop()
+    # -------- 7) Изменение цены закрытия (%) за период --------
+    period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
 
-            cmp_date = available_dates[end_idx - 1]
+    st.subheader("Изменение цены закрытия (%)")
+    st.caption(f"Период: {start_date} — {end_date} (торговых днеи в окне: {window})")
 
-            today_df = vol_df[vol_df["tradedate"] == end_date][["label", "shortname", "turnover_rub"]].copy()
-            today_df = today_df.rename(columns={"turnover_rub": "turnover_today"})
-
-            prev_df = vol_df[vol_df["tradedate"] == cmp_date][["label", "turnover_rub"]].copy()
-            prev_df = prev_df.rename(columns={"turnover_rub": "turnover_prev"})
-
-            st.caption(f"Сравнение: {end_date} vs {cmp_date}")
-
-        else:
-            # "месяц" = 21 торговыи день: считаем сумму оборота по окну
-            if end_idx - 21 + 1 < 0:
-                st.caption("Недостаточно исторических дат для расчета окна 21 торговыи день.")
-                st.stop()
-
-            # окно текущего "месяца"
-            cur_start_idx = end_idx - 21 + 1
-            cur_dates = set(available_dates[cur_start_idx : end_idx + 1])
-
-            # окно предыдущего "месяца"
-            prev_end_idx = cur_start_idx - 1
-            prev_start_idx = prev_end_idx - 21 + 1
-            if prev_start_idx < 0:
-                st.caption("Недостаточно исторических дат для сравнения двух окон по 21 торговому дню.")
-                st.stop()
-
-            prev_dates = set(available_dates[prev_start_idx : prev_end_idx + 1])
-
-            today_df = (
-                vol_df[vol_df["tradedate"].isin(cur_dates)]
-                .groupby(["label", "shortname"], as_index=False)["turnover_rub"]
-                .sum()
-                .rename(columns={"turnover_rub": "turnover_today"})
-            )
-
-            prev_df = (
-                vol_df[vol_df["tradedate"].isin(prev_dates)]
-                .groupby(["label"], as_index=False)["turnover_rub"]
-                .sum()
-                .rename(columns={"turnover_rub": "turnover_prev"})
-            )
-
-            st.caption(
-                f"Окна по 21 торговому дню: "
-                f"{available_dates[cur_start_idx]} — {end_date} vs "
-                f"{available_dates[prev_start_idx]} — {available_dates[prev_end_idx]}"
-            )
-
-        summary = today_df.merge(prev_df, on="label", how="left")
-
-        # процентное изменение оборота: (today/prev - 1) * 100
-        summary["change_pct"] = np.where(
-            (summary["turnover_prev"].notna()) & (summary["turnover_prev"] > 0),
-            (summary["turnover_today"] / summary["turnover_prev"] - 1.0) * 100.0,
-            np.nan,
+    if period_df.empty:
+        st.info("За выбранныи период нет данных.")
+    else:
+        # Схлопываем повторы на дату: берем последнии close (на случаи дублеи по сессиям)
+        period_df = period_df.dropna(subset=["close"]).copy()
+        period_df = (
+            period_df.sort_values(["label", "tradedate"])
+                     .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+                     .agg(close=("close", "last"), volume=("volume", "sum"), value=("value", "sum"))
         )
 
-        summary_table = summary[["shortname", "turnover_today", "change_pct"]].copy()
-        summary_table = summary_table.rename(
-            columns={
-                "shortname": "Название фонда",
-                "turnover_today": "Обьем в рублях (текущии период)",
-                "change_pct": "Изменение обьема, %",
-            }
-        ).sort_values("Обьем в рублях (текущии период)", ascending=False)
+        base_close = period_df.groupby("label")["close"].transform("first")
+        period_df["close_change_pct"] = (period_df["close"] / base_close - 1.0) * 100.0
 
-        # надежное форматирование без Styler
-        display_table = summary_table.copy()
-        display_table["Обьем в рублях (текущии период)"] = display_table["Обьем в рублях (текущии период)"].map(
-            lambda x: f"{x:,.0f}" if pd.notna(x) else "—"
-        )
-        display_table["Изменение обьема, %"] = display_table["Изменение обьема, %"].map(
-            lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
-        )
-
-        st.dataframe(display_table, use_container_width=True, hide_index=True)
-
-    # --------- TAB 2: ЛОГАРИФМИЧЕСКИЙ ГРАФИК ---------
-    with tab_log:
-        rub_pos = vol_df[vol_df["turnover_rub"] > 0].copy()
-        if rub_pos.empty:
-            st.warning("Для логарифмического графика нужны положительные значения оборота (turnover_rub > 0).")
-            st.stop()
-
-        rub_pos["log10_turnover"] = np.log10(rub_pos["turnover_rub"])
-
-        fig_rub = px.line(
-            rub_pos,
+        fig_close_pct = px.line(
+            period_df,
             x="tradedate",
-            y="turnover_rub",
+            y="close_change_pct",
             color="label",
-            custom_data=["log10_turnover", "isin", "shortname", "close", "volume"],
+            hover_data=["fund", "isin", "close", "volume", "value"],
             markers=True,
-            labels={"turnover_rub": "Оборот, руб", "tradedate": "Дата"},
+            labels={"close_change_pct": "Изменение цены, %", "tradedate": "Дата"},
         )
-        fig_rub.update_yaxes(type="log")
+        st.plotly_chart(fig_close_pct, use_container_width=True)
 
-        fig_rub.update_traces(
-            hovertemplate=(
-                "Дата: %{x}<br>"
-                "Оборот (руб): %{y:,.0f}<br>"
-                "log10(оборота): %{customdata[0]:.3f}<br>"
-                "Цена close: %{customdata[3]:,.2f}<br>"
-                "Объем (бумаг): %{customdata[4]:,.0f}<br>"
-                "ISIN: %{customdata[1]}<br>"
-                "<extra>%{fullData.name}</extra>"
-            )
-        )
+    # -------- 7b) Оборот торгов: Таблица + Логарифм. график + Гистограмма --------
+    st.subheader("Оборот торгов (value)")
+    st.caption(f"Период: {start_date} — {end_date} (торговых днеи в окне: {window})")
 
-        st.plotly_chart(fig_rub, use_container_width=True)
+    vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+    vol_df = vol_df.dropna(subset=["value"]).copy()
 
-# 7c) Средний размер сделки: value / numtrades
-st.subheader("Средний размер сделки (руб/сделку)")
-st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
-
-avg_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
-avg_df = avg_df.dropna(subset=["value", "numtrades"]).copy()
-
-avg_df["label"] = avg_df["shortname"].astype(str) + " (" + avg_df["isin"].astype(str) + ")"
-
-# Если на одну дату приходят дубли (по сессиям) — схлопываем
-avg_df = (
-    avg_df.groupby(["label", "shortname", "isin", "tradedate"], as_index=False)
-          .agg(
-              value=("value", "sum"),
-              numtrades=("numtrades", "sum"),
-          )
-)
-
-# Средний размер сделки (руб/сделку)
-avg_df = avg_df[avg_df["numtrades"] > 0].copy()
-avg_df["avg_trade_rub"] = avg_df["value"] / avg_df["numtrades"]
-
-if avg_df.empty:
-    st.info("Нет данных для расчета среднего размера сделки в выбранном периоде.")
-else:
-    fig_avg_trade = px.line(
-        avg_df.sort_values(["label", "tradedate"]),
-        x="tradedate",
-        y="avg_trade_rub",
-        color="label",
-        markers=True,
-        hover_data=["isin", "value", "numtrades"],
-        labels={"avg_trade_rub": "Средний размер сделки, руб", "tradedate": "Дата"},
+    # Схлопываем повторы: суммируем value, volume, numtrades; close берем последнии
+    vol_df = (
+        vol_df.sort_values(["label", "tradedate"])
+              .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+              .agg(
+                  value=("value", "sum"),
+                  volume=("volume", "sum"),
+                  numtrades=("numtrades", "sum"),
+                  close=("close", "last"),
+              )
     )
-    st.plotly_chart(fig_avg_trade, use_container_width=True)
-        
+
+    if vol_df.empty:
+        st.info("За выбранныи период нет данных по обороту.")
+    else:
+        tab_table, tab_log, tab_hist = st.tabs(["Таблица", "Логарифмическии график", "Гистограмма"])
+
+        # --- TAB 1: Таблица (day/day или window/window) ---
+        with tab_table:
+            change_mode = st.radio(
+                "Изменение оборота считать как",
+                options=["День к дню", "Месяц к месяцу (21 торговыи день)"],
+                horizontal=True,
+            )
+
+            # нужно взять торговые даты именно для оборота (на случаи пропусков)
+            vol_dates = sorted(vol_df["tradedate"].unique().tolist())
+            vol_dates_idx = {d: i for i, d in enumerate(vol_dates)}
+            if end_date not in vol_dates_idx:
+                # если вдруг end_date отсутствует в обороте, берем последнюю доступную
+                end_date_eff = vol_dates[-1]
+            else:
+                end_date_eff = end_date
+
+            end_i = vol_dates_idx[end_date_eff]
+
+            if change_mode == "День к дню":
+                if end_i - 1 < 0:
+                    st.caption("Недостаточно дат для day/day.")
+                    st.stop()
+                prev_date = vol_dates[end_i - 1]
+
+                today_df = vol_df[vol_df["tradedate"] == end_date_eff][["label", "fund", "isin", "value"]].copy()
+                today_df = today_df.rename(columns={"value": "value_today"})
+
+                prev_df = vol_df[vol_df["tradedate"] == prev_date][["label", "value"]].copy()
+                prev_df = prev_df.rename(columns={"value": "value_prev"})
+
+                st.caption(f"Сравнение: {end_date_eff} vs {prev_date}")
+
+            else:
+                # окно 21 торговыи день
+                if end_i - 21 + 1 < 0:
+                    st.caption("Недостаточно дат для окна 21 торговыи день.")
+                    st.stop()
+
+                cur_start_i = end_i - 21 + 1
+                cur_dates = set(vol_dates[cur_start_i : end_i + 1])
+
+                prev_end_i = cur_start_i - 1
+                prev_start_i = prev_end_i - 21 + 1
+                if prev_start_i < 0:
+                    st.caption("Недостаточно дат для сравнения двух окон.")
+                    st.stop()
+
+                prev_dates = set(vol_dates[prev_start_i : prev_end_i + 1])
+
+                today_df = (
+                    vol_df[vol_df["tradedate"].isin(cur_dates)]
+                    .groupby(["label", "fund", "isin"], as_index=False)["value"]
+                    .sum()
+                    .rename(columns={"value": "value_today"})
+                )
+
+                prev_df = (
+                    vol_df[vol_df["tradedate"].isin(prev_dates)]
+                    .groupby(["label"], as_index=False)["value"]
+                    .sum()
+                    .rename(columns={"value": "value_prev"})
+                )
+
+                st.caption(
+                    f"Окна по 21 торговому дню: "
+                    f"{vol_dates[cur_start_i]} — {end_date_eff} vs "
+                    f"{vol_dates[prev_start_i]} — {vol_dates[prev_end_i]}"
+                )
+
+            summary = today_df.merge(prev_df, on="label", how="left")
+            summary["change_pct"] = np.where(
+                (summary["value_prev"].notna()) & (summary["value_prev"] > 0),
+                (summary["value_today"] / summary["value_prev"] - 1.0) * 100.0,
+                np.nan,
+            )
+
+            summary_table = summary[["fund", "isin", "value_today", "change_pct"]].copy()
+            summary_table = summary_table.rename(
+                columns={
+                    "fund": "Фонд",
+                    "isin": "ISIN",
+                    "value_today": "Оборот, руб (текущии период)",
+                    "change_pct": "Изменение оборота, %",
+                }
+            ).sort_values("Оборот, руб (текущии период)", ascending=False)
+
+            display_table = summary_table.copy()
+            display_table["Оборот, руб (текущии период)"] = display_table["Оборот, руб (текущии период)"].map(
+                lambda x: f"{x:,.0f}" if pd.notna(x) else "—"
+            )
+            display_table["Изменение оборота, %"] = display_table["Изменение оборота, %"].map(
+                lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
+            )
+
+            st.dataframe(display_table, use_container_width=True, hide_index=True)
+
+        # --- TAB 2: Логарифмическии график оборота (value) ---
+        with tab_log:
+            val_pos = vol_df[vol_df["value"] > 0].copy()
+            if val_pos.empty:
+                st.warning("Для логарифмическои шкалы нужны положительные значения value > 0.")
+                st.stop()
+
+            val_pos["log10_value"] = np.log10(val_pos["value"])
+
+            fig_val = px.line(
+                val_pos,
+                x="tradedate",
+                y="value",
+                color="label",
+                custom_data=["log10_value", "isin", "fund", "close", "volume", "numtrades"],
+                markers=True,
+                labels={"value": "Оборот, руб", "tradedate": "Дата"},
+            )
+            fig_val.update_yaxes(type="log")
+            fig_val.update_traces(
+                hovertemplate=(
+                    "Дата: %{x}<br>"
+                    "Оборот (руб): %{y:,.0f}<br>"
+                    "log10(оборота): %{customdata[0]:.3f}<br>"
+                    "Цена close: %{customdata[3]:,.2f}<br>"
+                    "Объем (бумаг): %{customdata[4]:,.0f}<br>"
+                    "Сделок: %{customdata[5]:,.0f}<br>"
+                    "ISIN: %{customdata[1]}<br>"
+                    "<extra>%{fullData.name}</extra>"
+                )
+            )
+            st.plotly_chart(fig_val, use_container_width=True)
+
+        # --- TAB 3: Гистограмма (горизонтальная) суммарного оборота за окно ---
+        with tab_hist:
+            sum_df = (
+                vol_df.groupby(["label", "fund", "isin"], as_index=False)
+                      .agg(value_sum=("value", "sum"))
+                      .sort_values("value_sum", ascending=True)
+            )
+
+            fig_hist = px.bar(
+                sum_df,
+                x="value_sum",
+                y="label",
+                orientation="h",
+                labels={"value_sum": "Суммарныи оборот за окно, руб", "label": "Фонд"},
+                hover_data=["fund", "isin"],
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+    # -------- 7c) Среднии размер сделки: value / numtrades (логарифм. шкала) --------
+    st.subheader("Среднии размер сделки (руб/сделку)")
+    st.caption(f"Период: {start_date} — {end_date} (торговых днеи в окне: {window})")
+
+    avg_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+    avg_df = avg_df.dropna(subset=["value", "numtrades"]).copy()
+
+    avg_df = (
+        avg_df.sort_values(["label", "tradedate"])
+              .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+              .agg(value=("value", "sum"), numtrades=("numtrades", "sum"))
+    )
+
+    avg_df = avg_df[avg_df["numtrades"] > 0].copy()
+    avg_df["avg_trade_rub"] = avg_df["value"] / avg_df["numtrades"]
+
+    avg_pos = avg_df[avg_df["avg_trade_rub"] > 0].copy()
+
+    if avg_pos.empty:
+        st.info("Нет данных для расчета среднего размера сделки (value/numtrades) в выбранном периоде.")
+    else:
+        fig_avg_trade = px.line(
+            avg_pos.sort_values(["label", "tradedate"]),
+            x="tradedate",
+            y="avg_trade_rub",
+            color="label",
+            markers=True,
+            hover_data=["isin", "value", "numtrades"],
+            labels={"avg_trade_rub": "Среднии размер сделки, руб", "tradedate": "Дата"},
+        )
+        # 5) делаем график логарифмическим
+        fig_avg_trade.update_yaxes(type="log")
+        st.plotly_chart(fig_avg_trade, use_container_width=True)
+
+# ---------- РЕЖИМ 2: СРАВНЕНИЕ (сегодня vs предыдущии торговыи день) ----------
+else:
+    st.subheader("Сравнение цены закрытия: последняя торговая дата vs предыдущая (таблица)")
+
+    # 3) Таблица: изменение close (как было на графике, но таблично)
+    cmp_df = df_sel.dropna(subset=["close"]).copy()
+
+    # Схлопываем повторы на дату
+    cmp_df = (
+        cmp_df.sort_values(["label", "tradedate"])
+              .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+              .agg(close=("close", "last"))
+    )
+
+    def _last_prev(group: pd.DataFrame) -> pd.Series:
+        g = group.sort_values("tradedate")
+        last = g.iloc[-1]
+        if len(g) >= 2:
+            prev = g.iloc[-2]
+            return pd.Series({
+                "date_last": last["tradedate"],
+                "close_last": last["close"],
+                "date_prev": prev["tradedate"],
+                "close_prev": prev["close"],
+            })
+        return pd.Series({
+            "date_last": last["tradedate"],
+            "close_last": last["close"],
+            "date_prev": pd.NaT,
+            "close_prev": np.nan,
+        })
+
+    summary = (
+        cmp_df.groupby(["label", "fund", "isin"], as_index=False)
+              .apply(_last_prev, include_groups=False)
+    )
+
+    summary["change_pct"] = np.where(
+        (summary["close_prev"].notna()) & (summary["close_prev"] > 0),
+        (summary["close_last"] / summary["close_prev"] - 1.0) * 100.0,
+        np.nan,
+    )
+
+    out = summary[["fund", "isin", "date_last", "close_last", "date_prev", "close_prev", "change_pct"]].copy()
+    out = out.rename(columns={
+        "fund": "Фонд",
+        "isin": "ISIN",
+        "date_last": "Последняя дата",
+        "close_last": "Close (последняя)",
+        "date_prev": "Предыдущая дата",
+        "close_prev": "Close (предыдущая)",
+        "change_pct": "Изменение close, %",
+    })
+
+    out = out.sort_values("Изменение close, %", ascending=False, na_position="last")
+
+    display = out.copy()
+    display["Close (последняя)"] = display["Close (последняя)"].map(lambda x: f"{x:,.2f}" if pd.notna(x) else "—")
+    display["Close (предыдущая)"] = display["Close (предыдущая)"].map(lambda x: f"{x:,.2f}" if pd.notna(x) else "—")
+    display["Изменение close, %"] = display["Изменение close, %"].map(lambda x: "—" if pd.isna(x) else f"{x:+.2f}%")
+
+    st.dataframe(display, use_container_width=True, hide_index=True)
+
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
+
