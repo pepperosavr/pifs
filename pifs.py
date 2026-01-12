@@ -25,8 +25,8 @@ def get_secret(name: str, default: str = "") -> str:
         return str(st.secrets[name])
     return os.getenv(name, default)
 
-API_LOGIN = get_secret("API_LOGIN", "accentam-api-test1")
-API_PASS  = get_secret("API_PASS",  "652Dsw")
+API_LOGIN = get_secret("API_LOGIN", "accentam-api1")
+API_PASS  = get_secret("API_PASS",  "653Bsw")
 
 ZPIF_SECIDS = [
     "RU000A105328", # парус
