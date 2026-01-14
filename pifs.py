@@ -416,12 +416,13 @@ if mode == "Режим истории":
             fig_val.update_layout(separators=". ")
             fig_val.update_traces(
                 hovertemplate=(
-                    "Дата: %{x}<br>"
+                    "Дата: %{x|%Y-%m-%d}<br>"
+                    "Фонд: %{customdata[1]}<br>"
                     "Оборот (руб): %{y:,.0f}<br>"
-                    "log10 оборота: %{customdata[0]:.3f}<br>"
-                    "Цена закрытия: %{customdata[3]:,.2f}<br>"
-                    "Объем бумаг: %{customdata[4]:,.0f}<br>"
-                    "Сделок: %{customdata[5]:,.0f}<br>"
+                    "log10(оборота): %{customdata[0]:.3f}<br>"
+                    "Цена закрытия: %{customdata[2]:,.2f}<br>"
+                    "Объем бумаг: %{customdata[3]:,.0f}<br>"
+                    "Сделок: %{customdata[4]:,.0f}<br>"
                     "<extra>%{fullData.name}</extra>"
                 )
             )
