@@ -357,33 +357,38 @@ if mode == "Режим истории":
                     f"{vol_dates[prev_start_i]} — {vol_dates[prev_end_i]}"
                 )
 
-            summary = today_df.merge(prev_df, on="label", how="left")
-            summary["change_pct"] = np.where(
-                (summary["value_prev"].notna()) & (summary["value_prev"] > 0),
-                (summary["value_today"] / summary["value_prev"] - 1.0) * 100.0,
-                np.nan,
-            )
+                summary = today_df.merge(prev_df, on="label", how="left")
 
-            summary_table = summary[["fund", "isin", "value_today", "change_pct"]].copy()
-            summary_table = summary_table.rename(
-                columns={
-                    "fund": "Фонд",
-                    "isin": "ISIN",
-                    "value_today": "Оборот, руб (за текущий период)",
-                    "change_pct": "Изменение оборота, %",
-                }
-            ).sort_values("Оборот, руб (текущий период)", ascending=False)
+                summary["change_pct"] = np.where(
+                    (summary["value_prev"].notna()) & (summary["value_prev"] > 0),
+                    (summary["value_today"] / summary["value_prev"] - 1.0) * 100.0,
+                    np.nan,
+                )
 
-            display_table = summary_table.copy()
-            # пробел как разделитель тысяч
-        display_table["Оборот, руб (за текущий период)"] = display_table["Оборот, руб (за текущий период)"].map(
-            lambda x: (f"{x:,.0f}".replace(",", " ") if pd.notna(x) else "—")
-        )
+                summary_table = summary[["fund", "isin", "value_today", "change_pct"]].copy()
+                summary_table = summary_table.rename(
+                    columns={
+                        "fund": "Фонд",
+                        "isin": "ISIN",
+                        "value_today": "Оборот, руб (за текущий период)",
+                        "change_pct": "Изменение оборота, %",
+                    }
+                ).sort_values("Оборот, руб (за текущий период)", ascending=False)
 
-        # проценты с 2 знаками (и знаком + при росте)
-        display_table["Изменение оборота, %"] = display_table["Изменение оборота, %"].map(
-            lambda x: ("—" if pd.isna(x) else f"{x:+.2f}%")
-        )
+                display_table = summary_table.copy()
+
+# пробел как разделитель тысяч
+                display_table["Оборот, руб (за текущий период)"] = display_table["Оборот, руб (за текущий период)"].map(
+                    lambda x: (f"{x:,.0f}".replace(",", " ") if pd.notna(x) else "—")
+                )
+
+# проценты с 2 знаками (и знаком + при росте)
+                display_table["Изменение оборота, %"] = display_table["Изменение оборота, %"].map(
+                    lambda x: ("—" if pd.isna(x) else f"{x:+.2f}%")
+                )
+
+                st.dataframe(display_table, use_container_width=True, hide_index=True)
+
 
         # --- TAB 2: Логарифмическии график оборота (value) ---
         with tab_log:
