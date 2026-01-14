@@ -288,6 +288,7 @@ if mode == "Режим истории":
         tab_table, tab_log, tab_hist = st.tabs(["Таблица", "Логарифмическии график", "Гистограмма"])
 
         # --- TAB 1: Таблица (day/day или window/window) ---
+        
         with tab_table:
             change_mode = st.radio(
                 "Изменение оборота считать как",
@@ -295,21 +296,19 @@ if mode == "Режим истории":
                 horizontal=True,
             )
 
-            # нужно взять торговые даты именно для оборота (на случаи пропусков)
+    # торговые даты именно для оборота (на случаи пропусков)
             vol_dates = sorted(vol_df["tradedate"].unique().tolist())
             vol_dates_idx = {d: i for i, d in enumerate(vol_dates)}
-            if end_date not in vol_dates_idx:
-                # если вдруг end_date отсутствует в обороте, берем последнюю доступную
-                end_date_eff = vol_dates[-1]
-            else:
-                end_date_eff = end_date
 
+    # если end_date отсутствует в обороте — берем последнюю доступную
+            end_date_eff = end_date if end_date in vol_dates_idx else vol_dates[-1]
             end_i = vol_dates_idx[end_date_eff]
 
             if change_mode == "День к дню":
                 if end_i - 1 < 0:
-                    st.caption("Недостаточно дат для дня к дню.")
+                    st.caption("Недостаточно дат для сравнения день к дню.")
                     st.stop()
+
                 prev_date = vol_dates[end_i - 1]
 
                 today_df = vol_df[vol_df["tradedate"] == end_date_eff][["label", "fund", "isin", "value"]].copy()
@@ -318,12 +317,12 @@ if mode == "Режим истории":
                 prev_df = vol_df[vol_df["tradedate"] == prev_date][["label", "value"]].copy()
                 prev_df = prev_df.rename(columns={"value": "value_prev"})
 
-                st.caption(f"Сравнение: {end_date_eff} vs {prev_date}")
+                caption_text = f"Сравнение: {end_date_eff} vs {prev_date}"
 
             else:
-                # окно 21 торговый день
+        # окно 21 торговыи день
                 if end_i - 21 + 1 < 0:
-                    st.caption("Недостаточно дат для окна (21 торговый день).")
+                    st.caption("Недостаточно дат для окна (21 торговыи день).")
                     st.stop()
 
                 cur_start_i = end_i - 21 + 1
@@ -332,7 +331,7 @@ if mode == "Режим истории":
                 prev_end_i = cur_start_i - 1
                 prev_start_i = prev_end_i - 21 + 1
                 if prev_start_i < 0:
-                    st.caption("Недостаточно дат для сравнения двух окон.")
+                    st.caption("Недостаточно дат для сравнения двух окон по 21 торговому дню.")
                     st.stop()
 
                 prev_dates = set(vol_dates[prev_start_i : prev_end_i + 1])
@@ -351,43 +350,48 @@ if mode == "Режим истории":
                     .rename(columns={"value": "value_prev"})
                 )
 
-                st.caption(
+                caption_text = (
                     f"Окна по 21 торговому дню: "
                     f"{vol_dates[cur_start_i]} — {end_date_eff} vs "
                     f"{vol_dates[prev_start_i]} — {vol_dates[prev_end_i]}"
                 )
 
-                summary = today_df.merge(prev_df, on="label", how="left")
+            st.caption(caption_text)
 
-                summary["change_pct"] = np.where(
-                    (summary["value_prev"].notna()) & (summary["value_prev"] > 0),
-                    (summary["value_today"] / summary["value_prev"] - 1.0) * 100.0,
-                    np.nan,
-                )
+    # ---- Общая часть: собираем таблицу для обоих режимов ----
+            summary = today_df.merge(prev_df, on="label", how="left")
 
-                summary_table = summary[["fund", "isin", "value_today", "change_pct"]].copy()
-                summary_table = summary_table.rename(
-                    columns={
-                        "fund": "Фонд",
-                        "isin": "ISIN",
-                        "value_today": "Оборот, руб (за текущий период)",
-                        "change_pct": "Изменение оборота, %",
-                    }
-                ).sort_values("Оборот, руб (за текущий период)", ascending=False)
+            summary["change_pct"] = np.where(
+                (summary["value_prev"].notna()) & (summary["value_prev"] > 0),
+                (summary["value_today"] / summary["value_prev"] - 1.0) * 100.0,
+                np.nan,
+            )
 
-                display_table = summary_table.copy()
+            summary_table = summary[["fund", "isin", "value_today", "change_pct"]].copy()
+            summary_table = summary_table.rename(
+                columns={
+                    "fund": "Фонд",
+                    "isin": "ISIN",
+                    "value_today": "Оборот, руб (за текущии период)",
+                    "change_pct": "Изменение оборота, %",
+                }
+            ).sort_values("Оборот, руб (за текущии период)", ascending=False)
 
-# пробел как разделитель тысяч
-                display_table["Оборот, руб (за текущий период)"] = display_table["Оборот, руб (за текущий период)"].map(
-                    lambda x: (f"{x:,.0f}".replace(",", " ") if pd.notna(x) else "—")
-                )
+            display_table = summary_table.copy()
 
-# проценты с 2 знаками (и знаком + при росте)
-                display_table["Изменение оборота, %"] = display_table["Изменение оборота, %"].map(
-                    lambda x: ("—" if pd.isna(x) else f"{x:+.2f}%")
-                )
+    # пробел как разделитель тысяч
+            display_table["Оборот, руб (за текущии период)"] = display_table["Оборот, руб (за текущии period)"] \
+                if "Оборот, руб (за текущии period)" in display_table.columns else display_table["Оборот, руб (за текущии период)"]
+            display_table["Оборот, руб (за текущии период)"] = display_table["Оборот, руб (за текущии период)"].map(
+                lambda x: (f"{x:,.0f}".replace(",", " ") if pd.notna(x) else "—")
+            )
 
-                st.dataframe(display_table, use_container_width=True, hide_index=True)
+    # проценты с 2 знаками (и знаком + при росте)
+            display_table["Изменение оборота, %"] = display_table["Изменение оборота, %"].map(
+                lambda x: ("—" if pd.isna(x) else f"{x:+.2f}%")
+            )
+
+            st.dataframe(display_table, use_container_width=True, hide_index=True)
 
 
         # --- TAB 2: Логарифмическии график оборота (value) ---
