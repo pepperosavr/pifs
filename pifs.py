@@ -586,7 +586,7 @@ else:
     last_date = all_dates[-1]
     prev_date = all_dates[-2] if len(all_dates) >= 2 else None
 
-    c1, c2 = st.columns([1, 1])
+    c1, spacer, c2 = st.columns([3, 0.3, 3])
     c1.caption(f"Последняя дата: {last_date}")
     c2.caption(f"Предыдущая дата: {prev_date if prev_date is not None else '—'}")
     
