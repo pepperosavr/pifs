@@ -567,7 +567,7 @@ if mode == "Режим истории":
 
 # ---------- РЕЖИМ 2: СРАВНЕНИЕ (сегодня vs предыдущий торговыи день) ----------
 else:
-    st.subheader("Средневзвешенная цена, изменение цены закрытия")
+    st.subheader("Изменение цены закрытия, средневзвешенная цена")
 
     # 3) Таблица: изменение close 
     cmp_df = df_sel.dropna(subset=["close"]).copy()
@@ -628,16 +628,28 @@ else:
         np.nan,
     )
 
+    summary["waprice_change_pct"] = np.where(
+        (summary["waprice_prev"].notna()) & (summary["waprice_prev"] > 0),
+        (summary["waprice_last"] / summary["waprice_prev"] - 1.0) * 100.0,
+        np.nan,
+    )
     
-    out = summary[["fund", "isin", "close_last", "close_prev", "waprice_last", "waprice_prev", "change_pct"]].copy()
+    out = summary[[
+        "fund", "isin",
+        "close_last", "close_prev",
+        "waprice_last", "waprice_prev",
+        "change_pct", "waprice_change_pct"
+    ]].copy()
+    
     out = out.rename(columns={
         "fund": "Фонд",
         "isin": "ISIN",
-        "close_prev": "Предыдущая цена закрытия, руб",
         "close_last": "Последняя цена закрытия, руб",
+        "close_prev": "Предыдущая цена закрытия, руб",
         "change_pct": "Изменение цены закрытия, %",
-        "waprice_prev": "Предыдущая средневзвешенная цена, руб",
         "waprice_last": "Последняя средневзвешенная цена, руб",
+        "waprice_prev": "Предыдущая средневзвешенная цена, руб",
+        "waprice_change_pct": "Изменение средневзвешеннои цены, %",
     })
 
 # сортируем по реально существующей колонке
@@ -663,6 +675,9 @@ else:
         lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
     )
 
+    display["Изменение средневзвешеннои цены, %"] = display["Изменение средневзвешеннои цены, %"].map(
+        lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
+    )
     st.dataframe(display, use_container_width=True, hide_index=True)
 
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
