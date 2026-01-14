@@ -471,7 +471,7 @@ if mode == "Режим истории":
                 x="value_sum_unit",
                 y="label",
                 orientation="h",
-                custom_data=["fund", "isin", "value_sum_rub_fmt", "window"],
+                custom_data=["fund", "isin", "value_sum_rub_fmt", window],
                 labels={"value_sum_unit": f"Суммарныи оборот за период, {unit}", "label": "Фонд"},
                 color_discrete_sequence=["red"],
                 text="value_sum_unit",
