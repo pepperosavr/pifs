@@ -413,6 +413,7 @@ if mode == "Режим истории":
                 labels={"value": "Оборот, руб", "tradedate": "Дата"},
             )
             fig_val.update_yaxes(type="log")
+            fig_val.update_layout(separators=". ")
             fig_val.update_traces(
                 hovertemplate=(
                     "Дата: %{x}<br>"
