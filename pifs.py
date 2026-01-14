@@ -578,6 +578,17 @@ else:
               .agg(close=("close", "last"))
     )
 
+    all_dates = sorted(cmp_df["tradedate"].dropna().unique().tolist())
+    if len(all_dates) == 0:
+        st.info("Нет торговых дат для расчета сравнения.")
+        st.stop()
+
+    last_date = all_dates[-1]
+    prev_date = all_dates[-2] if len(all_dates) >= 2 else None
+
+    st.caption(f"Последняя дата: {last_date}")
+    st.caption(f"Предыдущая дата: {prev_date if prev_date is not None else '—'}")
+    
     def _last_prev(group: pd.DataFrame) -> pd.Series:
         g = group.sort_values("tradedate")
         last = g.iloc[-1]
@@ -607,15 +618,13 @@ else:
         np.nan,
     )
 
-    out = summary[["fund", "isin", "date_last", "close_last", "date_prev", "close_prev", "change_pct"]].copy()
+    out = summary[["fund", "isin", "close_last", "close_prev", "change_pct"]].copy()
 
     out = out.rename(columns={
         "fund": "Фонд",
         "isin": "ISIN",
-        "date_prev": "Предыдущая дата",
-        "date_last": "Последняя дата",
-        "close_prev": "Предыдущая цена закрытия",
-        "close_last": "Последняя цена закрытия",
+        "close_prev": "Предыдущая цена закрытия, руб",
+        "close_last": "Последняя цена закрытия, руб",
         "change_pct": "Изменение цены закрытия, %",
     })
 
