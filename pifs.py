@@ -42,7 +42,15 @@ FUND_MAP = {
     "RU000A1099U0": "ЗПИФСовр 9",
 }
 
-ZPIF_SECIDS = list(FUND_MAP.keys())
+ISIN_TO_MOEX_CODE = {
+    "RU000A10DQF7": "XACCSK",  # Акцент 5
+}
+
+# То, что хотим видеть в итоговых данных (ISIN-ы)
+TARGET_ISINS = list(FUND_MAP.keys())
+
+# То, что реально отправляем в API (MOEX-коды, где нужно; иначе ISIN как раньше)
+ZPIF_SECIDS = [ISIN_TO_MOEX_CODE.get(isin, isin) for isin in TARGET_ISINS]
 
 # -----------------------
 # API helpers
@@ -153,6 +161,13 @@ date_from = "2025-01-01T00:00:00Z"
 date_to   = utc_now.strftime("%Y-%m-%dT23:59:59Z")
 
 df = load_df(ZPIF_SECIDS, date_from, date_to)
+# На всякии случаи: оставляем только целевые ISIN (если в ответе вдруг будут лишние инструменты)
+df = df[df["isin"].isin(TARGET_ISINS)].copy()
+
+# Диагностика: каких ISIN нет в данных
+missing_isins = sorted(set(TARGET_ISINS) - set(df["isin"].dropna().unique()))
+if missing_isins:
+    st.warning("Нет данных по ISIN: " + ", ".join(missing_isins))
 
 if df.empty:
     st.warning("Данных не найдено за выбранныи период.")
