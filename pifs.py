@@ -663,7 +663,7 @@ else:
         "change_pct": "Изменение цены закрытия, %",
         "waprice_last": "Последняя средневзвешенная цена, руб",
         "waprice_prev": "Предыдущая средневзвешенная цена, руб",
-        "waprice_change_pct": "Изменение средневзвешеннои цены, %",
+        "waprice_change_pct": "Изменение средневзвешенной цены, %",
     })
 
 # сортируем по реально существующей колонке
@@ -689,7 +689,7 @@ else:
         lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
     )
 
-    display["Изменение средневзвешеннои цены, %"] = display["Изменение средневзвешеннои цены, %"].map(
+    display["Изменение средневзвешенной цены, %"] = display["Изменение средневзвешенной цены, %"].map(
         lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
     )
     st.dataframe(display, use_container_width=True, hide_index=True)
