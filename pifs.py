@@ -375,7 +375,7 @@ if mode == "Режим истории":
                     "value_today": "Оборот, руб (за текущий период)",
                     "change_pct": "Изменение оборота, %",
                 }
-            ).sort_values("Оборот, руб (за текущии период)", ascending=False)
+            ).sort_values("Оборот, руб (за текущий период)", ascending=False)
 
             display_table = summary_table.copy()
 
