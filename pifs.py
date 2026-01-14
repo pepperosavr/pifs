@@ -488,8 +488,6 @@ if mode == "Режим истории":
                 hovertemplate=(
                     "Фонд: %{y}<br>"
                     f"Суммарныи оборот: %{{x:,.{decimals}f}} {unit}<br>"
-                    "Суммарныи оборот (руб): %{customdata[2]} руб<br>"
-                    "ISIN: %{customdata[1]}<br>"
                     "<extra></extra>"
                 ),
             )
