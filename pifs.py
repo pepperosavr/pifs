@@ -543,8 +543,12 @@ if mode == "Режим истории":
             labels={"avg_trade_rub": "Средний размер сделки, руб", "tradedate": "Дата"},
         )
 
-    # логарифмическая ось
+
+        # логарифмическая ось
         fig_avg_trade.update_yaxes(type="log")
+
+# разделители: десятичная ".", тысячи " "
+        fig_avg_trade.update_layout(separators=". ")
 
     # hover: показываем и линейное значение, и log10
         fig_avg_trade.update_traces(
@@ -552,7 +556,7 @@ if mode == "Режим истории":
                 "Дата: %{x}<br>"
                 "Сделок: %{customdata[3]:,.0f}<br>"
                 "Средний размер сделки: %{y:,.0f} руб<br>"
-                "log10(среднего размера): %{customdata[0]:.3f}<br>"
+                "log10(среднего размера сделки): %{customdata[0]:.3f}<br>"
                 "<extra>%{fullData.name}</extra>"
             )
         )
