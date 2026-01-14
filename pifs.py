@@ -247,14 +247,17 @@ if mode == "Режим истории":
 )
 
 # Показываем изменение цены как процент в hover
+    fig_close_pct.update_yaxes(hoverformat=".2f")
+
     fig_close_pct.update_traces(
         hovertemplate=(
-            "Фонд: %{customdata[0]}<br>"
-            "Дата: %{x}<br>"
+            "Дата: %{x|%Y-%m-%d}<br>"
+            "Изменение цены: %{y:.2f}%<br>"
             "Цена закрытия: %{customdata[2]:.2f}<br>"
-            "Изменение цены закрытия: %{y:+.2f}%<br>"
             "Объем бумаг: %{customdata[3]:.0f}<br>"
             "Оборот (руб): %{customdata[4]:.0f}<br>"
+            "Фонд: %{customdata[0]}<br>"
+            "ISIN: %{customdata[1]}<br>"
             "<extra>%{fullData.name}</extra>"
         )
     )
