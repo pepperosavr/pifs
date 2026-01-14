@@ -436,6 +436,13 @@ if mode == "Режим истории":
                       .sort_values("value_sum", ascending=True)
             )
 
+        with tab_hist:
+            sum_df = (
+                vol_df.groupby(["label", "fund", "isin"], as_index=False)
+                      .agg(value_sum=("value", "sum"))
+                      .sort_values("value_sum", ascending=True)
+            )
+
             if sum_df.empty:
                 st.info("Нет данных для гистограммы.")
                 st.stop()
@@ -461,34 +468,40 @@ if mode == "Режим истории":
 
             sum_df["value_sum_unit"] = sum_df["value_sum"] / divisor
 
-    # 2) “Железно” делаем строку для рублевого значения с пробелами
+    # 2) Строка для рублевого значения с пробелами
             sum_df["value_sum_rub_fmt"] = sum_df["value_sum"].map(
                 lambda v: f"{v:,.0f}".replace(",", " ") if pd.notna(v) else "—"
             )
+
+    # 3) Период (число торговых дней) как колонка, чтобы можно было использовать в custom_data
+            sum_df["window_days"] = int(window)
 
             fig_hist = px.bar(
                 sum_df,
                 x="value_sum_unit",
                 y="label",
                 orientation="h",
-                custom_data=["fund", "isin", "value_sum_rub_fmt", window],
+                custom_data=["fund", "isin", "value_sum_rub_fmt", "window_days"],
                 labels={"value_sum_unit": f"Суммарныи оборот за период, {unit}", "label": "Фонд"},
                 color_discrete_sequence=["red"],
                 text="value_sum_unit",
             )
 
-    # 3) Разделители: десятичная ".", тысячи " "
+    # десятичная ".", тысячи " "
             fig_hist.update_layout(separators=". ")
 
-    # 4) Формат оси X и подписей на барах (без 7.81B)
+    # Отключаем SI-формат (B/M) и задаем нормальные подписи
             fig_hist.update_xaxes(tickformat=f",.{decimals}f")
+
             fig_hist.update_traces(
                 texttemplate=f"%{{x:,.{decimals}f}} {unit}",
                 textposition="outside",
                 hovertemplate=(
                     "Фонд: %{y}<br>"
                     "Период: %{customdata[3]} торговых дней<br>"
-                    f"Суммарныи оборот за период: %{{x:,.{decimals}f}} {unit}<br>"
+                    f"Суммарныи оборот: %{{x:,.{decimals}f}} {unit}<br>"
+                    "Суммарныи оборот (руб): %{customdata[2]} руб<br>"
+            
                     "<extra></extra>"
                 ),
             )
