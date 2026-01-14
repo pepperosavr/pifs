@@ -482,7 +482,7 @@ if mode == "Режим истории":
                 y="label",
                 orientation="h",
                 custom_data=["fund", "isin", "value_sum_rub_fmt", "window_days"],
-                labels={"value_sum_unit": f"Суммарныи оборот за период, {unit}", "label": "Фонд"},
+                labels={"value_sum_unit": f"Суммарный оборот за период, {unit}", "label": "Фонд"},
                 color_discrete_sequence=["red"],
                 text="value_sum_unit",
             )
@@ -499,7 +499,7 @@ if mode == "Режим истории":
                 hovertemplate=(
                     "Фонд: %{y}<br>"
                     "Период: %{customdata[3]} торговых дней<br>"
-                    f"Суммарныи оборот за период: %{{x:,.{decimals}f}} {unit}<br>"
+                    f"Суммарный оборот за период: %{{x:,.{decimals}f}} {unit}<br>"
             
                     "<extra></extra>"
                 ),
