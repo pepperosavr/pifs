@@ -301,7 +301,7 @@ if mode == "Режим истории":
     if vol_df.empty:
         st.info("За выбранный период нет данных по обороту.")
     else:
-        tab_table, tab_log, tab_hist = st.tabs(["Таблица", "Логарифмическии график", "Гистограмма"])
+        tab_table, tab_log, tab_hist = st.tabs(["Таблица", "Логарифмический график", "Гистограмма"])
 
         # --- TAB 1: Таблица (day/day или window/window) ---
         
@@ -410,7 +410,7 @@ if mode == "Режим истории":
             st.dataframe(display_table, use_container_width=True, hide_index=True)
 
 
-        # --- TAB 2: Логарифмическии график оборота (value) ---
+        # --- TAB 2: Логарифмический график оборота (value) ---
         with tab_log:
             val_pos = vol_df[vol_df["value"] > 0].copy()
             if val_pos.empty:
