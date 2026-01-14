@@ -243,7 +243,7 @@ if mode == "Режим истории":
         color="label",
         hover_data=["fund", "isin", "close", "volume", "value"],
         markers=True,
-        labels={"close_change_pct": "Изменение цены, %", "tradedate": "Дата"},
+        labels={"close_change_pct": "Изменение цены закрытия, %", "tradedate": "Дата"},
 )
 
 # Показываем изменение цены как процент в hover
