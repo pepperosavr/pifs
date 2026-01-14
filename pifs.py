@@ -555,7 +555,7 @@ if mode == "Режим истории":
             hovertemplate=(
                 "Дата: %{x}<br>"
                 "Сделок: %{customdata[3]:,.0f}<br>"
-                "Оборот на текущую дату (value): %{customdata[2]:,.0f} руб<br>"
+                "Оборот на текущую дату: %{customdata[2]:,.0f} руб<br>"
                 "Средний размер сделки: %{y:,.0f} руб<br>"
                 "log10(среднего размера сделки): %{customdata[0]:.3f}<br>"
                 "<extra>%{fullData.name}</extra>"
