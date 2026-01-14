@@ -248,6 +248,7 @@ if mode == "Режим истории":
 
 # Показываем изменение цены как процент в hover
     fig_close_pct.update_yaxes(hoverformat=".2f")
+    fig_close_pct.update_layout(separators=". ")
     
     fig_close_pct.update_traces(
         hovertemplate=(
