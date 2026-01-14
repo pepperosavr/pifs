@@ -435,15 +435,66 @@ if mode == "Режим истории":
                       .agg(value_sum=("value", "sum"))
                       .sort_values("value_sum", ascending=True)
             )
-        fig_hist = px.bar(
-            sum_df,
-            x="value_sum",
-            y="label",
-            orientation="h",
-            labels={"value_sum": "Суммарныи оборот за период, руб", "label": "Фонд"},
-            color_discrete_sequence=["red"],
-        )
-        st.plotly_chart(fig_hist, use_container_width=True)
+
+            if sum_df.empty:
+                st.info("Нет данных для гистограммы.")
+                st.stop()
+
+    # 1) Выбираем единицу (млрд/млн/тыс) по максимуму
+            max_val = float(sum_df["value_sum"].max())
+            if max_val >= 1e9:
+                divisor = 1e9
+                unit = "млрд руб"
+                decimals = 2
+            elif max_val >= 1e6:
+                divisor = 1e6
+                unit = "млн руб"
+                decimals = 2
+            elif max_val >= 1e3:
+                divisor = 1e3
+                unit = "тыс руб"
+                decimals = 0
+            else:
+                divisor = 1.0
+                unit = "руб"
+                decimals = 0
+
+            sum_df["value_sum_unit"] = sum_df["value_sum"] / divisor
+
+    # 2) “Железно” делаем строку для рублевого значения с пробелами
+            sum_df["value_sum_rub_fmt"] = sum_df["value_sum"].map(
+                lambda v: f"{v:,.0f}".replace(",", " ") if pd.notna(v) else "—"
+            )
+
+            fig_hist = px.bar(
+                sum_df,
+                x="value_sum_unit",
+                y="label",
+                orientation="h",
+                custom_data=["fund", "isin", "value_sum_rub_fmt"],
+                labels={"value_sum_unit": f"Суммарныи оборот за период, {unit}", "label": "Фонд"},
+                color_discrete_sequence=["red"],
+                text="value_sum_unit",
+            )
+
+    # 3) Разделители: десятичная ".", тысячи " "
+            fig_hist.update_layout(separators=". ")
+
+    # 4) Формат оси X и подписей на барах (без 7.81B)
+            fig_hist.update_xaxes(tickformat=f",.{decimals}f")
+            fig_hist.update_traces(
+                texttemplate=f"%{{x:,.{decimals}f}} {unit}",
+                textposition="outside",
+                hovertemplate=(
+                    "Фонд: %{y}<br>"
+                    f"Суммарныи оборот: %{{x:,.{decimals}f}} {unit}<br>"
+                    "Суммарныи оборот (руб): %{customdata[2]} руб<br>"
+                    "ISIN: %{customdata[1]}<br>"
+                    "<extra></extra>"
+                ),
+            )
+
+            st.plotly_chart(fig_hist, use_container_width=True)
 
 # -------- 7c) Средний размер сделки: value / numtrades (логарифмическая шкала) --------
     st.subheader("Средний размер сделки (руб/сделку)")
@@ -488,10 +539,9 @@ if mode == "Режим истории":
         fig_avg_trade.update_traces(
             hovertemplate=(
                 "Дата: %{x}<br>"
+                "Сделок: %{customdata[3]:,.0f}<br>"
                 "Средний размер сделки: %{y:,.0f} руб<br>"
                 "log10(среднего размера): %{customdata[0]:.3f}<br>"
-                "Объем сделки (руб): %{customdata[2]:,.0f}<br>"
-                "Сделок: %{customdata[3]:,.0f}<br>"
                 "<extra>%{fullData.name}</extra>"
             )
         )
