@@ -264,7 +264,7 @@ if mode == "Режим истории":
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
     # -------- 7b) Оборот торгов: Таблица + Логарифм. график + Гистограмма --------
-    st.subheader("Оборот торгов (value)")
+    st.subheader("Оборот торгов")
     st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
     vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
@@ -308,7 +308,7 @@ if mode == "Режим истории":
 
             if change_mode == "День к дню":
                 if end_i - 1 < 0:
-                    st.caption("Недостаточно дат для day/day.")
+                    st.caption("Недостаточно дат для дня к дню.")
                     st.stop()
                 prev_date = vol_dates[end_i - 1]
 
@@ -369,20 +369,21 @@ if mode == "Режим истории":
                 columns={
                     "fund": "Фонд",
                     "isin": "ISIN",
-                    "value_today": "Оборот, руб (текущий период)",
+                    "value_today": "Оборот, руб (за текущий период)",
                     "change_pct": "Изменение оборота, %",
                 }
             ).sort_values("Оборот, руб (текущий период)", ascending=False)
 
             display_table = summary_table.copy()
-            display_table["Оборот, руб (текущий период)"] = display_table["Оборот, руб (текущий период)"].map(
-                lambda x: f"{x:,.0f}" if pd.notna(x) else "—"
-            )
-            display_table["Изменение оборота, %"] = display_table["Изменение оборота, %"].map(
-                lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
-            )
+            # пробел как разделитель тысяч
+        display_table["Оборот, руб (за текущий период)"] = display_table["Оборот, руб (за текущий период)"].map(
+            lambda x: (f"{x:,.0f}".replace(",", " ") if pd.notna(x) else "—")
+        )
 
-            st.dataframe(display_table, use_container_width=True, hide_index=True)
+        # проценты с 2 знаками (и знаком + при росте)
+        display_table["Изменение оборота, %"] = display_table["Изменение оборота, %"].map(
+            lambda x: ("—" if pd.isna(x) else f"{x:+.2f}%")
+        )
 
         # --- TAB 2: Логарифмическии график оборота (value) ---
         with tab_log:
