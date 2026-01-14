@@ -119,12 +119,13 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     if not all_results:
         return pd.DataFrame(columns=["shortname", "fund", "isin", "volume", "value", "numtrades", "close", "tradedate"])
 
-    df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "tradedate"]]
+    df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "waprice", "tradedate"]]
 
     df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
     df["value"]     = pd.to_numeric(df["value"], errors="coerce")        # денежныи оборот
     df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")    # число сделок
     df["close"]     = pd.to_numeric(df["close"], errors="coerce")
+    df["waprice"] = pd.to_numeric(df["waprice"], errors="coerce")
 
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
@@ -571,13 +572,16 @@ else:
     # 3) Таблица: изменение close 
     cmp_df = df_sel.dropna(subset=["close"]).copy()
 
-    # Схлопываем повторы на дату
     cmp_df = (
         cmp_df.sort_values(["label", "tradedate"])
               .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
-              .agg(close=("close", "last"))
+              .agg(
+                  close=("close", "last"),
+                  waprice=("waprice", "last"),
+              )
     )
-
+    
+   
     all_dates = sorted(cmp_df["tradedate"].dropna().unique().tolist())
     if len(all_dates) == 0:
         st.info("Нет торговых дат для расчета сравнения.")
@@ -590,7 +594,7 @@ else:
         f"**Последняя дата:** {last_date}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
         f"**Предыдущая дата:** {prev_date if prev_date is not None else '—'}"
     )
-    
+
     def _last_prev(group: pd.DataFrame) -> pd.Series:
         g = group.sort_values("tradedate")
         last = g.iloc[-1]
@@ -599,14 +603,18 @@ else:
             return pd.Series({
                 "date_last": last["tradedate"],
                 "close_last": last["close"],
+                "waprice_last": last["waprice"],
                 "date_prev": prev["tradedate"],
                 "close_prev": prev["close"],
+                "waprice_prev": prev["waprice"],
             })
         return pd.Series({
             "date_last": last["tradedate"],
             "close_last": last["close"],
+            "waprice_last": last["waprice"],
             "date_prev": pd.NaT,
             "close_prev": np.nan,
+            "waprice_prev": np.nan,
         })
 
     summary = (
@@ -620,14 +628,16 @@ else:
         np.nan,
     )
 
-    out = summary[["fund", "isin", "close_last", "close_prev", "change_pct"]].copy()
-
+    
+    out = summary[["fund", "isin", "close_last", "close_prev", "waprice_last", "waprice_prev", "change_pct"]].copy()
     out = out.rename(columns={
         "fund": "Фонд",
         "isin": "ISIN",
         "close_prev": "Предыдущая цена закрытия, руб",
         "close_last": "Последняя цена закрытия, руб",
         "change_pct": "Изменение цены закрытия, %",
+        "waprice_prev": "Предыдущая средневзвешенная цена, руб",
+        "waprice_last": "Последняя средневзвешенная цена, руб",
     })
 
 # сортируем по реально существующей колонке
@@ -639,6 +649,13 @@ else:
         lambda x: f"{x:,.2f}".replace(",", " ") if pd.notna(x) else "—"
     )
     display["Предыдущая цена закрытия, руб"] = display["Предыдущая цена закрытия, руб"].map(
+        lambda x: f"{x:,.2f}".replace(",", " ") if pd.notna(x) else "—"
+    )
+
+    display["Последняя средневзвешенная цена, руб"] = display["Последняя средневзвешенная цена, руб"].map(
+        lambda x: f"{x:,.2f}".replace(",", " ") if pd.notna(x) else "—"
+    )
+    display["Предыдущая средневзвешенная цена, руб"] = display["Предыдущая средневзвешенная цена, руб"].map(
         lambda x: f"{x:,.2f}".replace(",", " ") if pd.notna(x) else "—"
     )
 # проценты
