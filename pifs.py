@@ -608,6 +608,7 @@ else:
     )
 
     out = summary[["fund", "isin", "date_last", "close_last", "date_prev", "close_prev", "change_pct"]].copy()
+
     out = out.rename(columns={
         "fund": "Фонд",
         "isin": "ISIN",
@@ -615,15 +616,26 @@ else:
         "date_last": "Последняя дата",
         "close_prev": "Предыдущая цена закрытия",
         "close_last": "Последняя цена закрытия",
-        "change_pct": "Изменение цены закрытия",
+        "change_pct": "Изменение цены закрытия, %",
     })
 
-    out = out.sort_values("Изменение close, %", ascending=False, na_position="last")
+# сортируем по реально существующей колонке
+    out = out.sort_values("Изменение цены закрытия, %", ascending=False, na_position="last")
 
     display = out.copy()
-    display["Close (последняя)"] = display["Close (последняя)"].map(lambda x: f"{x:,.2f}" if pd.notna(x) else "—")
-    display["Close (предыдущая)"] = display["Close (предыдущая)"].map(lambda x: f"{x:,.2f}" if pd.notna(x) else "—")
-    display["Изменение close, %"] = display["Изменение close, %"].map(lambda x: "—" if pd.isna(x) else f"{x:+.2f}%")
+
+# формат: пробелы для тысяч, 2 знака после запятой
+    display["Последняя цена закрытия"] = display["Последняя цена закрытия"].map(
+        lambda x: f"{x:,.2f}".replace(",", " ") if pd.notna(x) else "—"
+    )
+    display["Предыдущая цена закрытия"] = display["Предыдущая цена закрытия"].map(
+        lambda x: f"{x:,.2f}".replace(",", " ") if pd.notna(x) else "—"
+    )
+
+# проценты
+    display["Изменение цены закрытия, %"] = display["Изменение цены закрытия, %"].map(
+        lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
+    )
 
     st.dataframe(display, use_container_width=True, hide_index=True)
 
