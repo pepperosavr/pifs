@@ -586,7 +586,10 @@ else:
     last_date = all_dates[-1]
     prev_date = all_dates[-2] if len(all_dates) >= 2 else None
 
+    c1, c2 = st.columns(2)
+        with c1:
     st.caption(f"Последняя дата: {last_date}")
+        with c2:
     st.caption(f"Предыдущая дата: {prev_date if prev_date is not None else '—'}")
     
     def _last_prev(group: pd.DataFrame) -> pd.Series:
