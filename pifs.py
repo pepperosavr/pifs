@@ -635,10 +635,9 @@ else:
     )
     
     out = summary[[
-        "fund", "isin",
-        "close_last", "close_prev",
-        "waprice_last", "waprice_prev",
-        "change_pct", "waprice_change_pct"
+        "fund", "isin", "close_prev", "close_last", "change_pct",
+        "waprice_prev", "waprice_last",
+        "waprice_change_pct"
     ]].copy()
     
     out = out.rename(columns={
