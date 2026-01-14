@@ -372,7 +372,7 @@ if mode == "Режим истории":
                 columns={
                     "fund": "Фонд",
                     "isin": "ISIN",
-                    "value_today": "Оборот, руб (за текущии период)",
+                    "value_today": "Оборот, руб (за текущий период)",
                     "change_pct": "Изменение оборота, %",
                 }
             ).sort_values("Оборот, руб (за текущии период)", ascending=False)
@@ -380,9 +380,9 @@ if mode == "Режим истории":
             display_table = summary_table.copy()
 
     # пробел как разделитель тысяч
-            display_table["Оборот, руб (за текущии период)"] = display_table["Оборот, руб (за текущии period)"] \
-                if "Оборот, руб (за текущии period)" in display_table.columns else display_table["Оборот, руб (за текущии период)"]
-            display_table["Оборот, руб (за текущии период)"] = display_table["Оборот, руб (за текущии период)"].map(
+            display_table["Оборот, руб (за текущий период)"] = display_table["Оборот, руб (за текущий период)"] \
+                if "Оборот, руб (за текущий период)" in display_table.columns else display_table["Оборот, руб (за текущий период)"]
+            display_table["Оборот, руб (за текущий период)"] = display_table["Оборот, руб (за текущий период)"].map(
                 lambda x: (f"{x:,.0f}".replace(",", " ") if pd.notna(x) else "—")
             )
 
