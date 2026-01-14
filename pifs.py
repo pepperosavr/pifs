@@ -41,16 +41,19 @@ FUND_MAP = {
     "RU000A10A117": "ЗПИФ СМЛТ",
     "RU000A1099U0": "ЗПИФСовр 9",
 }
+# --- ISIN -> торговый код (SECID) для запроса истории ---
+# По большинству фондов у вас ISIN совпадает с кодом инструмента, но есть исключения.
+ISIN_TO_MOEX_CODE = {isin: isin for isin in FUND_MAP.keys()}
 
-ISIN_TO_MOEX_CODE = {
-    "RU000A10DQF7": "XACCSK",  # Акцент 5
-}
+# ВАЖНО: исключения (код на бирже != ISIN)
+ISIN_TO_MOEX_CODE["RU000A108BZ2"] = "XTRIUMF"  # ПАРУС-ТРИУМФ :contentReference[oaicite:2]{index=2}
+ISIN_TO_MOEX_CODE["RU000A10A117"] = "XHOUSE"   # Contrada Capital / ЗПИФ СМЛТ :contentReference[oaicite:3]{index=3}
 
-# То, что хотим видеть в итоговых данных (ISIN-ы)
-TARGET_ISINS = list(FUND_MAP.keys())
+# обратная мапа: код -> ISIN (нужна, чтобы восстановить isin, если API вернет только secid)
+MOEX_CODE_TO_ISIN = {code: isin for isin, code in ISIN_TO_MOEX_CODE.items()}
 
-# То, что реально отправляем в API (MOEX-коды, где нужно; иначе ISIN как раньше)
-ZPIF_SECIDS = [ISIN_TO_MOEX_CODE.get(isin, isin) for isin in TARGET_ISINS]
+# То, что реально уходит в API как instruments
+ZPIF_INSTRUMENTS = list(MOEX_CODE_TO_ISIN.keys())
 
 # -----------------------
 # API helpers
@@ -86,7 +89,7 @@ def fetch_all_trading_results(token: str, instruments: list[str], date_from: str
         body = {
             "engine": "stock",
             "market": "shares",
-            "boardid": ["TQIF"],
+            "boardid": ["TQIF", "PSAU"],
             "instruments": instruments,
             "dateFrom": date_from,
             "dateTo": date_to,
@@ -129,6 +132,16 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
 
     df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "waprice", "tradedate"]]
 
+
+    raw = pd.DataFrame(all_results)
+
+    need_cols = ["shortname", "secid", "isin", "volume", "value", "numtrades", "close", "waprice", "tradedate"]
+    for c in need_cols:
+        if c not in raw.columns:
+            raw[c] = np.nan
+
+    df = raw[need_cols].copy()
+
     df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
     df["value"]     = pd.to_numeric(df["value"], errors="coerce")        # денежныи оборот
     df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")    # число сделок
@@ -136,6 +149,10 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     df["waprice"] = pd.to_numeric(df["waprice"], errors="coerce")
 
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
+
+# Если API вернул только secid (или isin пустой) — восстанавливаем isin по нашей мапе
+    df["isin"] = df["isin"].fillna(df["secid"].map(MOEX_CODE_TO_ISIN))
+
     df = df.dropna(subset=["isin", "tradedate"])
 
     # имя фонда 
@@ -160,7 +177,7 @@ utc_now = datetime.now(timezone.utc)
 date_from = "2025-01-01T00:00:00Z"
 date_to   = utc_now.strftime("%Y-%m-%dT23:59:59Z")
 
-df = load_df(ZPIF_SECIDS, date_from, date_to)
+df = load_df(ZPIF_INSTRUMENTS, date_from, date_to)
 # На всякии случаи: оставляем только целевые ISIN (если в ответе вдруг будут лишние инструменты)
 df = df[df["isin"].isin(TARGET_ISINS)].copy()
 
