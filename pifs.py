@@ -523,62 +523,94 @@ if mode == "Режим истории":
 
             st.plotly_chart(fig_hist, use_container_width=True)
 
-# -------- 7c) Средний размер сделки: value / numtrades (логарифмическая шкала) --------
-    st.subheader("Средний размер сделки (руб/сделку) - логарифмический график")
-    st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
+# -------- 7c) Среднии размер сделки: ТАБЛИЦА (последняя дата vs предыдущая) --------
+st.subheader("Среднии размер сделки (руб/сделку) — таблица изменений")
+st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
-    avg_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
-    avg_df = avg_df.dropna(subset=["value", "numtrades"]).copy()
+avg_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+avg_df = avg_df.dropna(subset=["value", "numtrades"]).copy()
 
-    avg_df = (
-        avg_df.sort_values(["label", "tradedate"])
-              .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
-              .agg(value=("value", "sum"), numtrades=("numtrades", "sum"))
+# схлопываем повторы на фонд/дату
+avg_df = (
+    avg_df.sort_values(["label", "tradedate"])
+          .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+          .agg(value=("value", "sum"), numtrades=("numtrades", "sum"))
+)
+
+# среднии размер сделки (руб/сделку)
+avg_df = avg_df[avg_df["numtrades"] > 0].copy()
+avg_df["avg_trade_rub"] = avg_df["value"] / avg_df["numtrades"]
+
+if avg_df.empty:
+    st.info("Нет данных для расчета среднего размера сделки (value/numtrades) в выбранном периоде.")
+else:
+    # торговые даты именно для avg_df (на случаи пропусков)
+    avg_dates = sorted(avg_df["tradedate"].dropna().unique().tolist())
+    if len(avg_dates) == 0:
+        st.info("Нет торговых дат для расчета таблицы.")
+        st.stop()
+
+    last_date = avg_dates[-1]
+    prev_date = avg_dates[-2] if len(avg_dates) >= 2 else None
+
+    st.markdown(
+        f"**Последняя дата:** {last_date}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
+        f"**Предыдущая дата:** {prev_date if prev_date is not None else '—'}"
     )
 
-    avg_df = avg_df[avg_df["numtrades"] > 0].copy()
-    avg_df["avg_trade_rub"] = avg_df["value"] / avg_df["numtrades"]
+    # значения на последнюю дату
+    last_df = avg_df[avg_df["tradedate"] == last_date][["label", "fund", "isin", "avg_trade_rub"]].copy()
+    last_df = last_df.rename(columns={"avg_trade_rub": "avg_last"})
 
-# для логарифма нужны строго положительные значения
-    avg_pos = avg_df[avg_df["avg_trade_rub"] > 0].copy()
-
-    if avg_pos.empty:
-        st.info("Нет данных для расчета среднего размера сделки (value/numtrades) в выбранном периоде.")
+    # значения на предыдущую дату (если есть)
+    if prev_date is not None:
+        prev_df = avg_df[avg_df["tradedate"] == prev_date][["label", "avg_trade_rub"]].copy()
+        prev_df = prev_df.rename(columns={"avg_trade_rub": "avg_prev"})
     else:
-    # считаем log10 для hover
-        avg_pos["log10_avg_trade"] = np.log10(avg_pos["avg_trade_rub"])
+        prev_df = pd.DataFrame(columns=["label", "avg_prev"])
 
-        fig_avg_trade = px.line(
-            avg_pos.sort_values(["label", "tradedate"]),
-            x="tradedate",
-            y="avg_trade_rub",
-            color="label",
-            markers=True,
-        # custom_data позволяет явно контролировать, что попадет в hovertemplate
-            custom_data=["log10_avg_trade", "isin", "value", "numtrades"],
-            labels={"avg_trade_rub": "Средний размер сделки, руб", "tradedate": "Дата"},
-        )
+    out = last_df.merge(prev_df, on="label", how="left")
 
+    # абсолютное изменение
+    out["change_abs"] = out["avg_last"] - out["avg_prev"]
 
-        # логарифмическая ось
-        fig_avg_trade.update_yaxes(type="log")
+    # процентное изменение
+    out["change_pct"] = np.where(
+        (out["avg_prev"].notna()) & (out["avg_prev"] > 0),
+        (out["avg_last"] / out["avg_prev"] - 1.0) * 100.0,
+        np.nan,
+    )
 
-# разделители: десятичная ".", тысячи " "
-        fig_avg_trade.update_layout(separators=". ")
+    # финальная таблица + порядок колонок
+    out = out[["fund", "isin", "avg_last", "avg_prev", "change_abs", "change_pct"]].copy()
+    out = out.rename(columns={
+        "fund": "Фонд",
+        "isin": "ISIN",
+        "avg_last": "Последнии среднии размер сделки, руб/сделку",
+        "avg_prev": "Предыдущии среднии размер сделки, руб/сделку",
+        "change_abs": "Изменение, руб",
+        "change_pct": "Изменение, %",
+    })
 
-    # hover: показываем и линейное значение, и log10
-        fig_avg_trade.update_traces(
-            hovertemplate=(
-                "Дата: %{x}<br>"
-                "Сделок: %{customdata[3]:,.0f}<br>"
-                "Оборот на текущую дату: %{customdata[2]:,.0f} руб<br>"
-                "Средний размер сделки: %{y:,.0f} руб<br>"
-                "log10(среднего размера сделки): %{customdata[0]:.3f}<br>"
-                "<extra>%{fullData.name}</extra>"
-            )
-        )
+    out = out.sort_values("Изменение, %", ascending=False, na_position="last")
 
-        st.plotly_chart(fig_avg_trade, use_container_width=True)
+    # форматирование (пробелы как разделитель тысяч)
+    display = out.copy()
+
+    display["Последнии среднии размер сделки, руб/сделку"] = display["Последнии среднии размер сделки, руб/сделку"].map(
+        lambda x: f"{x:,.0f}".replace(",", " ") if pd.notna(x) else "—"
+    )
+    display["Предыдущии среднии размер сделки, руб/сделку"] = display["Предыдущии среднии размер сделки, руб/сделку"].map(
+        lambda x: f"{x:,.0f}".replace(",", " ") if pd.notna(x) else "—"
+    )
+    display["Изменение, руб"] = display["Изменение, руб"].map(
+        lambda x: "—" if pd.isna(x) else f"{x:+,.0f}".replace(",", " ")
+    )
+    display["Изменение, %"] = display["Изменение, %"].map(
+        lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
+    )
+
+    st.dataframe(display, use_container_width=True, hide_index=True)
 
 # ---------- РЕЖИМ 2: СРАВНЕНИЕ (сегодня vs предыдущий торговыи день) ----------
 else:
