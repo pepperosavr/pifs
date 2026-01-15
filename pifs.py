@@ -614,46 +614,40 @@ else:
               )
     )
     
-   
     all_dates = sorted(cmp_df["tradedate"].dropna().unique().tolist())
-    if len(all_dates) == 0:
-        st.info("Нет торговых дат для расчета сравнения.")
+    if len(all_dates) < 2:
+        st.info("Недостаточно торговых дат для сравнения (нужно минимум 2).")
         st.stop()
 
-    last_date = all_dates[-1]
-    prev_date = all_dates[-2] if len(all_dates) >= 2 else None
+# Ползунок: выбираем ЛЮБУЮ дату, кроме самой первой (иначе не с чем сравнивать)
+    sel_date: date = st.select_slider(
+        "Дата для сравнения (будет сравниваться с предыдущим торговым днем)",
+        options=all_dates[1:],
+        value=all_dates[-1],
+    )
+
+    sel_i = all_dates.index(sel_date)
+    prev_date = all_dates[sel_i - 1]
 
     st.markdown(
-        f"**Последняя дата:** {last_date}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
-        f"**Предыдущая дата:** {prev_date if prev_date is not None else '—'}"
+        f"**Выбранная дата:** {sel_date}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
+        f"**Предыдущая торговая дата:** {prev_date}"
     )
 
-    def _last_prev(group: pd.DataFrame) -> pd.Series:
-        g = group.sort_values("tradedate")
-        last = g.iloc[-1]
-        if len(g) >= 2:
-            prev = g.iloc[-2]
-            return pd.Series({
-                "date_last": last["tradedate"],
-                "close_last": last["close"],
-                "waprice_last": last["waprice"],
-                "date_prev": prev["tradedate"],
-                "close_prev": prev["close"],
-                "waprice_prev": prev["waprice"],
-            })
-        return pd.Series({
-            "date_last": last["tradedate"],
-            "close_last": last["close"],
-            "waprice_last": last["waprice"],
-            "date_prev": pd.NaT,
-            "close_prev": np.nan,
-            "waprice_prev": np.nan,
-        })
+# Берем значения на выбранную дату и на предыдущую
+    last_df = cmp_df[cmp_df["tradedate"] == sel_date][["label", "fund", "isin", "close", "waprice"]].copy()
+    last_df = last_df.rename(columns={
+        "close": "close_last",
+        "waprice": "waprice_last",
+    })
 
-    summary = (
-        cmp_df.groupby(["label", "fund", "isin"], as_index=False)
-              .apply(_last_prev, include_groups=False)
-    )
+    prev_df = cmp_df[cmp_df["tradedate"] == prev_date][["label", "close", "waprice"]].copy()
+    prev_df = prev_df.rename(columns={
+        "close": "close_prev",
+        "waprice": "waprice_prev",
+    })
+
+    summary = last_df.merge(prev_df, on="label", how="left")
 
     summary["change_pct"] = np.where(
         (summary["close_prev"].notna()) & (summary["close_prev"] > 0),
@@ -666,13 +660,13 @@ else:
         (summary["waprice_last"] / summary["waprice_prev"] - 1.0) * 100.0,
         np.nan,
     )
-    
+
     out = summary[[
-        "fund", "isin", "close_prev", "close_last", "change_pct",
-        "waprice_prev", "waprice_last",
-        "waprice_change_pct"
+        "fund", "isin",
+        "close_last", "close_prev", "change_pct",
+        "waprice_last", "waprice_prev", "waprice_change_pct"
     ]].copy()
-    
+
     out = out.rename(columns={
         "fund": "Фонд",
         "isin": "ISIN",
@@ -684,32 +678,28 @@ else:
         "waprice_change_pct": "Изменение средневзвешенной цены, %",
     })
 
-# сортируем по реально существующей колонке
     out = out.sort_values("Изменение цены закрытия, %", ascending=False, na_position="last")
 
     display = out.copy()
-
     display["Последняя цена закрытия, руб"] = display["Последняя цена закрытия, руб"].map(
         lambda x: f"{x:,.2f}".replace(",", " ") if pd.notna(x) else "—"
     )
     display["Предыдущая цена закрытия, руб"] = display["Предыдущая цена закрытия, руб"].map(
         lambda x: f"{x:,.2f}".replace(",", " ") if pd.notna(x) else "—"
     )
-
     display["Последняя средневзвешенная цена, руб"] = display["Последняя средневзвешенная цена, руб"].map(
         lambda x: f"{x:,.2f}".replace(",", " ") if pd.notna(x) else "—"
     )
-    display["Предыдущая средневзвешенная цена, руб"] = display["Предыдущая средневзвешенная цена, руб"].map(
+    display["СПредыдущая средневзвешенная цена, руб"] = display["Предыдущая средневзвешенная цена, руб"].map(
         lambda x: f"{x:,.2f}".replace(",", " ") if pd.notna(x) else "—"
     )
-# проценты
     display["Изменение цены закрытия, %"] = display["Изменение цены закрытия, %"].map(
         lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
     )
-
     display["Изменение средневзвешенной цены, %"] = display["Изменение средневзвешенной цены, %"].map(
         lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
     )
+
     st.dataframe(display, use_container_width=True, hide_index=True)
 
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
