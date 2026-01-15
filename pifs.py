@@ -524,7 +524,7 @@ if mode == "Режим истории":
             st.plotly_chart(fig_hist, use_container_width=True)
 
     # -------- 7c) Средний размер сделки: ТАБЛИЦА (изменение за выбранное окно) --------
-        st.subheader("Изменение среднего размера сделки (руб/сделку) за выбранное окно")
+        st.subheader("Изменение среднего размера сделки (руб/сделку) за выбранный период")
         st.caption(f"Окно: {start_date} — {end_date} (торговых дней в окне: {window})")
 
         avg_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
