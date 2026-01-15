@@ -525,7 +525,7 @@ if mode == "Режим истории":
 
     # -------- 7c) Средний размер сделки: ТАБЛИЦА (изменение за выбранное окно) --------
         st.subheader("Изменение среднего размера сделки (руб/сделку) за выбранный период")
-        st.caption(f"Окно: {start_date} — {end_date} (торговых дней в окне: {window})")
+        st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
         avg_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
         avg_df = avg_df.dropna(subset=["value", "numtrades"]).copy()
