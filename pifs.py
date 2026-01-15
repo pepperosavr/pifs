@@ -523,9 +523,9 @@ if mode == "Режим истории":
 
             st.plotly_chart(fig_hist, use_container_width=True)
 
-# -------- 7c) Среднии размер сделки: ТАБЛИЦА (последняя дата vs предыдущая) --------
-        st.subheader("Изменение среднего размера сделки (руб/сделку)")
-        st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
+    # -------- 7c) Средний размер сделки: ТАБЛИЦА (изменение за выбранное окно) --------
+        st.subheader("Изменение среднего размера сделки (руб/сделку) за выбранное окно")
+        st.caption(f"Окно: {start_date} — {end_date} (торговых дней в окне: {window})")
 
         avg_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
         avg_df = avg_df.dropna(subset=["value", "numtrades"]).copy()
@@ -537,70 +537,56 @@ if mode == "Режим истории":
                   .agg(value=("value", "sum"), numtrades=("numtrades", "sum"))
         )
 
-# среднии размер сделки (руб/сделку)
+# средний размер сделки (руб/сделку) по каждой дате
         avg_df = avg_df[avg_df["numtrades"] > 0].copy()
         avg_df["avg_trade_rub"] = avg_df["value"] / avg_df["numtrades"]
 
         if avg_df.empty:
-            st.info("Нет данных для расчета среднего размера сделки (value/numtrades) в выбранном периоде.")
+            st.info("Нет данных для расчета среднего размера сделки (value/numtrades) в выбранном окне.")
         else:
-    # торговые даты именно для avg_df (на случаи пропусков)
-            avg_dates = sorted(avg_df["tradedate"].dropna().unique().tolist())
-            if len(avg_dates) == 0:
-                st.info("Нет торговых дат для расчета таблицы.")
-                st.stop()
+    # Для каждого фонда берем первую и последнюю доступную дату ВНУТРИ ОКНА
+            def _first_last_in_window(g: pd.DataFrame) -> pd.Series:
+                g = g.sort_values("tradedate")
+                first = g.iloc[0]
+                last = g.iloc[-1]
+                return pd.Series({
+                    "avg_first": first["avg_trade_rub"],
+                    "avg_last": last["avg_trade_rub"],
+                    "date_first": first["tradedate"],
+                    "date_last": last["tradedate"],
+                })
 
-            last_date = avg_dates[-1]
-            prev_date = avg_dates[-2] if len(avg_dates) >= 2 else None
-
-            st.markdown(
-                f"**Последняя дата:** {last_date}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
-                f"**Предыдущая дата:** {prev_date if prev_date is not None else '—'}"
+            win = (
+                avg_df.groupby(["label", "fund", "isin"], as_index=False)
+                      .apply(_first_last_in_window, include_groups=False)
             )
 
-    # значения на последнюю дату
-            last_df = avg_df[avg_df["tradedate"] == last_date][["label", "fund", "isin", "avg_trade_rub"]].copy()
-            last_df = last_df.rename(columns={"avg_trade_rub": "avg_last"})
-
-    # значения на предыдущую дату (если есть)
-            if prev_date is not None:
-                prev_df = avg_df[avg_df["tradedate"] == prev_date][["label", "avg_trade_rub"]].copy()
-                prev_df = prev_df.rename(columns={"avg_trade_rub": "avg_prev"})
-            else:
-                prev_df = pd.DataFrame(columns=["label", "avg_prev"])
-    
-            out = last_df.merge(prev_df, on="label", how="left")
-
-    # абсолютное изменение
-            out["change_abs"] = out["avg_last"] - out["avg_prev"]
-
-    # процентное изменение
-            out["change_pct"] = np.where(
-                (out["avg_prev"].notna()) & (out["avg_prev"] > 0),
-                (out["avg_last"] / out["avg_prev"] - 1.0) * 100.0,
+    # изменения за окно: конец окна (последняя доступная дата) vs начало окна (первая доступная дата)
+            win["change_abs"] = win["avg_last"] - win["avg_first"]
+            win["change_pct"] = np.where(
+                (win["avg_first"].notna()) & (win["avg_first"] > 0),
+                (win["avg_last"] / win["avg_first"] - 1.0) * 100.0,
                 np.nan,
             )
 
-    # финальная таблица + порядок колонок
-            out = out[["fund", "isin", "avg_last", "avg_prev", "change_abs", "change_pct"]].copy()
+            out = win[["fund", "isin", "avg_first", "avg_last", "change_abs", "change_pct"]].copy()
             out = out.rename(columns={
                 "fund": "Фонд",
                 "isin": "ISIN",
-                "avg_last": "Последний средний размер сделки, руб/сделку",
-                "avg_prev": "Предыдущий средний размер сделки, руб/сделку",
+                "avg_first": "Средний размер сделки (начало выбранного периода), руб/сделку",
+                "avg_last": "Средний размер сделки (конец выбранного периода), руб/сделку",
                 "change_abs": "Изменение, руб",
                 "change_pct": "Изменение, %",
             })
 
             out = out.sort_values("Изменение, %", ascending=False, na_position="last")
 
-    # форматирование (пробелы как разделитель тысяч)
+    # форматирование: пробелы как разделитель тысяч
             display = out.copy()
-
-            display["Последний средний размер сделки, руб/сделку"] = display["Последний средний размер сделки, руб/сделку"].map(
+            display["Средний размер сделки (начало выбранного периода), руб/сделку"] = display["Средний размер сделки (начало выбранного периода), руб/сделку"].map(
                 lambda x: f"{x:,.0f}".replace(",", " ") if pd.notna(x) else "—"
             )
-            display["Предыдущий средний размер сделки, руб/сделку"] = display["Предыдущий средний размер сделки, руб/сделку"].map(
+            display["Средний размер сделки (конец выбранного периода), руб/сделку"] = display["Средний размер сделки (конец выбранного периода), руб/сделку"].map(
                 lambda x: f"{x:,.0f}".replace(",", " ") if pd.notna(x) else "—"
             )
             display["Изменение, руб"] = display["Изменение, руб"].map(
