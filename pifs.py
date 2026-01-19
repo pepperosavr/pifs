@@ -280,7 +280,7 @@ if mode == "Режим истории":
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
     # -------- 7a2) Волатильность цены (по close) --------
-    st.subheader("Волатильность цены (по close)")
+    st.subheader("Волатильность цены закрытия")
 
 # period_df у вас выше уже агрегирован (на label/fund/isin/tradedate) и содержит close
     price_df = period_df[["label", "fund", "isin", "tradedate", "close"]].dropna(subset=["close"]).copy()
@@ -306,11 +306,11 @@ if mode == "Режим истории":
         out = out.rename(columns={
             "fund": "Фонд",
             "isin": "ISIN",
-            "vol_ann_pct": "Волатильность, % годовых (за окно)",
-        }).sort_values("Волатильность, % годовых (за окно)", ascending=False, na_position="last")
+            "vol_ann_pct": "Волатильность, % годовых (за выбранный период)",
+        }).sort_values("Волатильность, % годовых (за выбранный период)", ascending=False, na_position="last")
 
         display = out.copy()
-        display["Волатильность, % годовых (за окно)"] = display["Волатильность, % годовых (за окно)"].map(
+        display["Волатильность, % годовых (за выбранный период)"] = display["Волатильность, % годовых (за выбранный период)"].map(
             lambda x: "—" if pd.isna(x) else f"{x:.2f}%"
         )
 
@@ -319,7 +319,7 @@ if mode == "Режим истории":
 # --- TAB 2: График скользящей (rolling) волатильности ---
     with tab_vol_plot:
         roll_n = st.slider(
-            "Окно для скользящей волатильности (торговые дни)",
+            "Длина периода для скользящей волатильности (торговые дни)",
             min_value=5,
             max_value=min(60, window) if "window" in locals() else 60,
             value=min(21, window) if "window" in locals() else 21,
@@ -339,7 +339,7 @@ if mode == "Режим истории":
         vol_plot_df = price_df.dropna(subset=["vol_roll_ann_pct"]).copy()
 
         if vol_plot_df.empty:
-            st.info("Недостаточно точек для rolling-волатильности (нужно хотя бы roll_n+1 торговых дат).")
+            st.info("Недостаточно точек для скользящей-волатильности.")
         else:
             fig_vol = px.line(
                 vol_plot_df,
@@ -357,7 +357,7 @@ if mode == "Режим истории":
                     "Фонд: %{customdata[0]}<br>"
                     "ISIN: %{customdata[1]}<br>"
                     "Волатильность: %{y:.2f}%<br>"
-                    f"Окно: {roll_n} торговых дней<br>"
+                    f"Период: {roll_n} торговых дней<br>"
                     "<extra>%{fullData.name}</extra>"
                 )
             )
