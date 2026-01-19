@@ -279,6 +279,87 @@ if mode == "Режим истории":
     )
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
+    # -------- 7a2) Волатильность цены (по close) --------
+    st.subheader("Волатильность цены (по close)")
+
+# Важно: используем уже схлопнутыи period_df (на фонд/дату) и close="last"
+# period_df у вас выше уже агрегирован и содержит: label, fund, isin, tradedate, close
+
+    price_df = period_df[["label", "fund", "isin", "tradedate", "close"]].dropna(subset=["close"]).copy()
+    price_df = price_df.sort_values(["label", "tradedate"])
+
+# Лог-доходности (стандарт для волатильности)
+    price_df["ret"] = np.log(price_df["close"] / price_df.groupby("label")["close"].shift(1))
+
+# 1) Волатильность за выбранное окно (одно число на фонд)
+    vol_tbl = (
+        price_df.groupby(["fund", "isin", "label"], as_index=False)["ret"]
+                .std()
+                .rename(columns={"ret": "vol_daily"})
+    )
+
+    vol_tbl["vol_ann_pct"] = vol_tbl["vol_daily"] * np.sqrt(252) * 100.0
+
+# Таблица (с пробелами для тысяч тут не нужно, это проценты)
+    vol_out = vol_tbl[["fund", "isin", "vol_ann_pct"]].copy()
+    vol_out = vol_out.rename(columns={
+        "fund": "Фонд",
+        "isin": "ISIN",
+        "vol_ann_pct": "Волатильность, % годовых (за окно)",
+    }).sort_values("Волатильность, % годовых (за окно)", ascending=False, na_position="last")
+
+    vol_disp = vol_out.copy()
+    vol_disp["Волатильность, % годовых (за окно)"] = vol_disp["Волатильность, % годовых (за окно)"].map(
+        lambda x: "—" if pd.isna(x) else f"{x:.2f}%"
+    )
+
+    st.dataframe(vol_disp, use_container_width=True, hide_index=True)
+
+# 2) Скользящая волатильность (график по датам)
+    roll_n = st.slider(
+        "Окно для скользящеи волатильности (торговые дни)",
+        min_value=5,
+        max_value=min(60, window) if "window" in locals() else 60,
+        value=min(21, window) if "window" in locals() else 21,
+        step=1,
+    )
+
+# rolling std по доходностям -> годовая волатильность в %
+    price_df["vol_roll_ann_pct"] = (
+        price_df.groupby("label")["ret"]
+                .rolling(roll_n)
+                .std()
+                .reset_index(level=0, drop=True)
+                * np.sqrt(252) * 100.0
+    )
+
+    vol_plot_df = price_df.dropna(subset=["vol_roll_ann_pct"]).copy()
+
+    if vol_plot_df.empty:
+        st.info("Недостаточно точек, чтобы построить скользящую волатильность (нужно хотя бы roll_n+1 дат).")
+    else:
+        fig_vol = px.line(
+            vol_plot_df,
+            x="tradedate",
+            y="vol_roll_ann_pct",
+            color="label",
+            markers=True,
+            labels={"vol_roll_ann_pct": "Волатильность, % годовых", "tradedate": "Дата"},
+            custom_data=["fund", "isin"],
+        )
+        fig_vol.update_layout(separators=". ")
+        fig_vol.update_traces(
+            hovertemplate=(
+                "Дата: %{x|%Y-%m-%d}<br>"
+                "Фонд: %{customdata[0]}<br>"
+                "ISIN: %{customdata[1]}<br>"
+                "Волатильность: %{y:.2f}%<br>"
+                f"Rolling окно: {roll_n} торговых днеи<br>"
+                "<extra>%{fullData.name}</extra>"
+            )
+        )
+        st.plotly_chart(fig_vol, use_container_width=True)
+
     # -------- 7b) Оборот торгов: Таблица + Логарифм. график + Гистограмма --------
     st.subheader("Оборот торгов")
     st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
