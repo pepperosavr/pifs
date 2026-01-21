@@ -200,6 +200,12 @@ print(f"Saved snapshot to: {out_path.resolve()}")
 
 available_funds = sorted(df["fund"].unique().tolist())
 
+selected_funds = st.multiselect(
+    "Выберите фонды",
+    available_funds,
+    default=available_funds,   # по умолчанию все 13
+)
+
 # --- Группировка по УК / брендам (массовое добавление/удаление) ---
 # 1) Описываем группы через FUND_MAP, чтобы не дублировать списки
 GROUPS = {
@@ -245,11 +251,7 @@ with st.expander("Быстрыи выбор по УК (добавить/убра
             st.rerun()
 
 # 4) Обычныи ручнои выбор остается (можно убрать/оставить конкретные фонды внутри группы)
-selected_funds = st.multiselect(
-    "Выберите фонды",
-    available_funds,
-    default=available_funds,   # по умолчанию все 13
-)
+
 
 df_sel = df[df["fund"].isin(selected_funds)].copy()
 df_sel = df_sel.sort_values(["tradedate", "fund"])
