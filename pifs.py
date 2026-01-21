@@ -488,9 +488,7 @@ if mode == "Режим истории":
             # std внутри выбранного отрезка
                     month_tbl = (
                         month_cut.groupby(["label", "fund", "isin"], as_index=False)
-                                 .agg(
-                                     vol_oc_daily=("ret_oc", "std"),
-                                 )
+                             .agg(vol_oc_daily=("ret_oc", "std"))
                     )
 
                     month_tbl["vol_oc_daily_pct"] = month_tbl["vol_oc_daily"] * 100.0
@@ -499,12 +497,14 @@ if mode == "Режим истории":
                     skeleton = df_sel[["label", "fund", "isin"]].drop_duplicates()
 
                     out2 = skeleton.merge(
-                        month_tbl[["label", "n_obs", "vol_oc_daily_pct"]],
+                        month_tbl[["label", "vol_oc_daily_pct"]],
                         on="label",
                         how="left"
                     )
 
                     col_name = f"Волатильность цены открытия к цене закрытия, % (за {n_days} дней)"
+
+
                     out2 = out2.rename(columns={
                         "fund": "Фонд",
                         "isin": "ISIN",
