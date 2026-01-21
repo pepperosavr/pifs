@@ -489,7 +489,6 @@ if mode == "Режим истории":
                     month_tbl = (
                         month_cut.groupby(["label", "fund", "isin"], as_index=False)
                                  .agg(
-                                     n_obs=("ret_oc", "count"),
                                      vol_oc_daily=("ret_oc", "std"),
                                  )
                     )
@@ -509,7 +508,6 @@ if mode == "Режим истории":
                     out2 = out2.rename(columns={
                         "fund": "Фонд",
                         "isin": "ISIN",
-                        "n_obs": "Число наблюдений",
                         "vol_oc_daily_pct": col_name,
                     })
 
