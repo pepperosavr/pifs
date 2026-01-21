@@ -1010,47 +1010,82 @@ if mode == "Режим истории":
             format_func=lambda x: f"{x} — {INDEX_MAP.get(x, x)}",
         )
 
-        if idx_selected:
-            idx_frames = []
-            idx_errors = []
-            for s in idx_selected:
-                try:
-                    idx_frames.append(load_index_candles(s, start_date, end_date))
-                except Exception as e:
-                    idx_errors.append(f"{s}: {e}")
+        if not idx_selected:
+            st.info("Выберите хотя бы один индекс.")
+        else:
+    # idx_df должен содержать данные по индексам за достаточно длинный период
+    # и включать только выбранные индексы (иначе отфильтруем)
+            idx_sel_df = idx_df[idx_df["secid"].isin(idx_selected)].copy()
 
-            if idx_errors:
-                st.warning("Не удалось загрузить часть индексов:\n\n" + "\n".join(idx_errors))
+            idx_sel_df = idx_sel_df.dropna(subset=["tradedate", "close"]).copy()
 
-            if idx_frames:
-                idx_df = pd.concat(idx_frames, ignore_index=True)
-                idx_df = idx_df.sort_values(["secid", "tradedate"])
+    # Даты только по выбранным индексам
+            idx_dates = sorted(idx_sel_df["tradedate"].unique().tolist())
+            if len(idx_dates) < 2:
+                st.warning("Недостаточно дат по выбранным индексам, чтобы построить период.")
+            else:
+        # --- ОТДЕЛЬНЫЙ ВЫБОР ПЕРИОДА ДЛЯ ИНДЕКСОВ ---
+                idx_end_date = st.select_slider(
+                    "Конечная дата (индексы)",
+                    options=idx_dates,
+                    value=idx_dates[-1],
+                    key="idx_end_date",
+                )
 
-        idx_df["label"] = idx_df["secid"].map(INDEX_MAP).fillna(idx_df["secid"])
+                idx_max_window = min(252, len(idx_dates))
+                idx_window = st.slider(
+                    "Длина периода (торговые дни)",
+                    min_value=2,
+                    max_value=idx_max_window,
+                    value=min(30, idx_max_window),
+                    step=1,
+                    key="idx_window",
+                )
 
-        fig_idx = px.line(
-            idx_df,
-            x="tradedate",
-            y="close",
-            color="label",
-            markers=True,
-            labels={"close": "Значение индекса", "tradedate": "Дата"},
-            custom_data=["secid"],
-        )
+                idx_date_to_i = {d: i for i, d in enumerate(idx_dates)}
+                idx_end_i = idx_date_to_i[idx_end_date]
+                idx_start_i = max(0, idx_end_i - idx_window + 1)
+                idx_start_date = idx_dates[idx_start_i]
 
-   
-       
-        fig_idx.update_layout(separators=". ")
+                st.caption(f"Период: {idx_start_date} — {idx_end_date} (торговых дней: {idx_window})")
 
-        fig_idx.update_traces(
-            hovertemplate=(
-                "Дата: %{x|%Y-%m-%d}<br>"
-                "Индекс: %{customdata[0]}<br>"
-                "Значение: %{y:,.2f}<br>"
-                "<extra></extra>"
-            )
-        )
-        st.plotly_chart(fig_idx, use_container_width=True)
+        # Фильтр по окну индексов
+                idx_period = idx_sel_df[
+                    (idx_sel_df["tradedate"] >= idx_start_date) &
+                    (idx_sel_df["tradedate"] <= idx_end_date)
+                ].copy()
+
+        # Если вдруг есть дубли по дате — схлопнем
+                idx_period = (
+                    idx_period.sort_values(["secid", "tradedate"])
+                              .groupby(["secid", "label", "tradedate"], as_index=False)
+                              .agg(close=("close", "last"))
+                )
+
+        # График значений
+                fig_idx = px.line(
+                    idx_period,
+                    x="tradedate",
+                    y="close",
+                    color="label",
+                    markers=True,
+                    labels={"close": "Значение индекса", "tradedate": "Дата"},
+                    custom_data=["secid"],
+                )
+
+        # Разделители: десятичная ".", тысячи " "
+                fig_idx.update_layout(separators=". ")
+
+                fig_idx.update_traces(
+                    hovertemplate=(
+                        "Дата: %{x|%Y-%m-%d}<br>"
+                        "Индекс: %{customdata[0]}<br>"
+                        "Значение: %{y:,.2f}<br>"
+                        "<extra></extra>"
+                    )
+                )
+
+                st.plotly_chart(fig_idx, use_container_width=True)
 
 # ---------- РЕЖИМ 2: СРАВНЕНИЕ (сегодня vs предыдущий торговыи день) ----------
 else:
