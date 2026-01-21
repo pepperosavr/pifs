@@ -382,7 +382,7 @@ if mode == "Режим истории":
             else:
                 st.markdown(
                     f"**Выбранная дата:** {end_date_eff}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
-                    f"**Волатильность в таблице на предыдущую дату:** {prev_date}"
+                    f"**Предыдущая дата:** {prev_date}"
                 )
 
             # лог-доходность close-close
@@ -440,57 +440,88 @@ if mode == "Режим истории":
     # TAB 2: месячная волатильность по внутридневным изменениям Open->Close
     # ---------------------------------------------------------
         with tab_month:
-            # Месяц по выбранной конечной дате
-            month_start = end_date_eff.replace(day=1)
-            st.markdown(f"**Месяц:** {month_start} — {end_date_eff}")
+    # Месяц по выбранной конечной дате
+    month_start = end_date_eff.replace(day=1)
 
-            month_df = price_base[(price_base["tradedate"] >= month_start) & (price_base["tradedate"] <= end_date_eff)].copy()
+    st.markdown(
+        f"**Месяц:** {month_start} — {end_date_eff}"
+        f"&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
+        f"**Доходности:** ln(Close/Open)"
+    )
 
-        # Нужны open и close
-            month_df = month_df.dropna(subset=["open", "close"]).copy()
-            month_df = month_df[(month_df["open"] > 0) & (month_df["close"] > 0)].copy()
+    # Данные внутри месяца до end_date_eff
+    month_df = price_base[
+        (price_base["tradedate"] >= month_start) &
+        (price_base["tradedate"] <= end_date_eff)
+    ].copy()
 
-            if month_df.empty:
-                st.info("Нет данных open/close для расчета месячной волатильности (Open→Close) за выбранный месяц.")
-            else:
+    # Нужны open и close
+    month_df = month_df.dropna(subset=["open", "close"]).copy()
+    month_df = month_df[(month_df["open"] > 0) & (month_df["close"] > 0)].copy()
+
+    if month_df.empty:
+        st.info("Нет данных open/close для расчета (Open→Close) в выбранном месяце.")
+    else:
+        # Список торговых дат в этом месяце (по факту данных)
+        month_dates = sorted(month_df["tradedate"].unique().tolist())
+        if len(month_dates) < 2:
+            st.info("Недостаточно торговых дат в месяце для расчета волатильности.")
+        else:
+            # Ползунок: сколько торговых дней брать внутри месяца
+            max_n = len(month_dates)
+            n_days = st.slider(
+                "Период внутри месяца (торговые дни)",
+                min_value=2,
+                max_value=max_n,
+                value=min(10, max_n),
+                step=1,
+                key="vol_month_n_days",
+            )
+
+            # Берем последние N торговых дат месяца (заканчивая end_date_eff)
+            selected_dates = set(month_dates[-n_days:])
+            month_cut = month_df[month_df["tradedate"].isin(selected_dates)].copy()
+
             # внутридневная доходность Open->Close
-                month_df["ret_oc"] = np.log(month_df["close"] / month_df["open"])
+            month_cut["ret_oc"] = np.log(month_cut["close"] / month_cut["open"])
 
-            # std внутри месяца (это волатильность дневных внутридневных изменений)
-                month_tbl = (
-                    month_df.groupby(["label", "fund", "isin"], as_index=False)
-                            .agg(
-                                days_in_month=("tradedate", "nunique"),
-                                vol_oc_daily=("ret_oc", "std"),
-                            )
-                )
+            # std внутри выбранного отрезка
+            month_tbl = (
+                month_cut.groupby(["label", "fund", "isin"], as_index=False)
+                         .agg(
+                             n_obs=("ret_oc", "count"),
+                             vol_oc_daily=("ret_oc", "std"),
+                         )
+            )
 
-                month_tbl["vol_oc_daily_pct"] = month_tbl["vol_oc_daily"] * 100.0
-                month_tbl["vol_oc_ann_pct"] = month_tbl["vol_oc_daily"] * np.sqrt(252) * 100.0
+            month_tbl["vol_oc_daily_pct"] = month_tbl["vol_oc_daily"] * 100.0
 
-                skeleton = df_sel[["label", "fund", "isin"]].drop_duplicates()
-                out2 = skeleton.merge(
-                    month_tbl[["label", "days_in_month", "vol_oc_daily_pct"]],
-                    on="label",
-                    how="left"
-                )
+            # "скелет" всех фондов, чтобы строки не пропадали
+            skeleton = df_sel[["label", "fund", "isin"]].drop_duplicates()
 
-                out2 = out2.rename(columns={
-                    "fund": "Фонд",
-                    "isin": "ISIN",
-                    "vol_oc_daily_pct": "Волатильность цены открытия к цене закрытия, %",
-                }).sort_values(
-                    "Волатильность цены открытия к цене закрытия, %",
-                    ascending=False,
-                    na_position="last"
-                )
+            out2 = skeleton.merge(
+                month_tbl[["label", "n_obs", "vol_oc_daily_pct"]],
+                on="label",
+                how="left"
+            )
 
-                display2 = out2.copy()
-                display2["Волатильность цены открытия к цене закрытия, %"] = display2[
-                    "Волатильность цены открытия к цене закрытия, %"
-                ].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}%")
+            out2 = out2.rename(columns={
+                "fund": "Фонд",
+                "isin": "ISIN",
+                "n_obs": "Число наблюдений",
+                "vol_oc_daily_pct": f"Волатильность цены открытия к цене закрытия, % (за {n_days} дней)",
+            }).sort_values(
+                f"Волатильность Open→Close, % (за {n_days} дней)",
+                ascending=False,
+                na_position="last"
+            )
 
-                st.dataframe(display2, use_container_width=True, hide_index=True)
+            display2 = out2.copy()
+            display2[f"Волатильность цены открытия к цене закрытия, % (за {n_days} дней)"] = display2[
+                f"Волатильность цены открытия к цене закрытия, % (за {n_days} дней)"
+            ].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}%")
+
+            st.dataframe(display2, use_container_width=True, hide_index=True)    
 
     # -------- 7b) Оборот торгов: Таблица + Логарифм. график + Гистограмма --------
     st.subheader("Оборот торгов")
