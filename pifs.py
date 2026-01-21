@@ -206,52 +206,47 @@ selected_funds = st.multiselect(
     default=available_funds,   # по умолчанию все 13
 )
 
-# --- Группировка по УК / брендам (массовое добавление/удаление) ---
-# 1) Описываем группы через FUND_MAP, чтобы не дублировать списки
+# --- Группы УК / бренды (явно задаем списки фондов по названиям из FUND_MAP) ---
 GROUPS = {
     "Парус":  [name for _, name in FUND_MAP.items() if str(name).startswith("ПАРУС-")],
-    "Акцент": [name for _, name in FUND_MAP.items() if str(name).startswith("Акцент") or str(name).upper().startswith("АКЦЕНТ")],
-    "СФН":    [FUND_MAP.get("RU000A1099U0", "ЗПИФСовр 9")],   # при желании расширите список
-    "Самолет":[FUND_MAP.get("RU000A10A117", "ЗПИФ СМЛТ")],    # "самолет"
+    "Акцент": [name for _, name in FUND_MAP.items()
+               if str(name).startswith("Акцент") or str(name).upper().startswith("АКЦЕНТ")],
+    "СФН":    [FUND_MAP.get("RU000A1099U0", "ЗПИФСовр 9")],
+    "Самолет":[FUND_MAP.get("RU000A10A117", "ЗПИФ СМЛТ")],
 }
 
-# 2) Инициализируем выбор один раз
-if "selected_funds" not in st.session_state:
-    st.session_state.selected_funds = available_funds[:]  # по умолчанию все
+# ключ именно для виджета multiselect (НЕ используем тот же ключ как "переменную")
+SELECT_KEY = "fund_select"
 
-# 3) Кнопки "+/-" по группам (не ломают ручнои выбор, а лишь массово применяют операции)
+# инициализация выбранных фондов (один раз)
+if SELECT_KEY not in st.session_state:
+    st.session_state[SELECT_KEY] = available_funds[:]  # по умолчанию все
+
+def _add_group(group_name: str):
+    gf = [f for f in GROUPS.get(group_name, []) if f in available_funds]
+    st.session_state[SELECT_KEY] = sorted(set(st.session_state[SELECT_KEY]).union(gf))
+
+def _remove_group(group_name: str):
+    gf = [f for f in GROUPS.get(group_name, []) if f in available_funds]
+    st.session_state[SELECT_KEY] = sorted(set(st.session_state[SELECT_KEY]) - set(gf))
+
 with st.expander("Быстрыи выбор по УК (добавить/убрать группы)", expanded=False):
     cols = st.columns(len(GROUPS))
-    for i, (gname, gf_list) in enumerate(GROUPS.items()):
-        # оставляем только реально доступные фонды (если каких-то нет в df)
-        gf = [f for f in gf_list if f in available_funds]
-
+    for i, gname in enumerate(GROUPS.keys()):
         with cols[i]:
             st.markdown(f"**{gname}**")
-            add_key = f"add_{gname}"
-            rm_key  = f"rm_{gname}"
+            st.button(f"+ {gname}", key=f"btn_add_{gname}", use_container_width=True,
+                      on_click=_add_group, args=(gname,))
+            st.button(f"− {gname}", key=f"btn_rm_{gname}", use_container_width=True,
+                      on_click=_remove_group, args=(gname,))
 
-            if st.button(f"+ {gname}", key=add_key, use_container_width=True, disabled=(len(gf) == 0)):
-                st.session_state.selected_funds = sorted(set(st.session_state.selected_funds).union(gf))
-                st.rerun()
-
-            if st.button(f"− {gname}", key=rm_key, use_container_width=True, disabled=(len(gf) == 0)):
-                st.session_state.selected_funds = sorted(set(st.session_state.selected_funds) - set(gf))
-                st.rerun()
-
-    # опционально: две общие кнопки
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("Выбрать все", use_container_width=True):
-            st.session_state.selected_funds = available_funds[:]
-            st.rerun()
+        st.button("Выбрать все", use_container_width=True,
+                  on_click=lambda: st.session_state.__setitem__(SELECT_KEY, available_funds[:]))
     with c2:
-        if st.button("Снять все", use_container_width=True):
-            st.session_state.selected_funds = []
-            st.rerun()
-
-# 4) Обычныи ручнои выбор остается (можно убрать/оставить конкретные фонды внутри группы)
-
+        st.button("Снять все", use_container_width=True,
+                  on_click=lambda: st.session_state.__setitem__(SELECT_KEY, []))
 
 df_sel = df[df["fund"].isin(selected_funds)].copy()
 df_sel = df_sel.sort_values(["tradedate", "fund"])
