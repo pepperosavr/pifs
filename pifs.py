@@ -999,7 +999,7 @@ if mode == "Режим истории":
             out["secid"] = secid
             return out
 
-        st.subheader("Индексы Московскои биржи за выбранный период")
+        st.subheader("Индексы Московской биржи за выбранный период")
 
         IDX_KEY = "idx_select"
         idx_selected = st.multiselect(
