@@ -45,7 +45,8 @@ FUND_MAP = {
 # ВАЖНО: некоторым фондам в API нужно передавать не ISIN, а торговыи код MOEX (SECID/ticker).
 # Для "Акцент 5" это XACCSK при ISIN RU000A10DQF7. :contentReference[oaicite:1]{index=1}
 ISIN_TO_MOEX_CODE = {
-    "RU000A10DQF7": "XACCSK",  # Акцент 5
+    "RU000A10DQF7": "XACCSK", # Акцент 5
+    "RU000A10A117": "XHOUSE", # самолет
 }
 
 # То, что хотим видеть в итоговых данных (ISIN-ы)
@@ -53,6 +54,9 @@ TARGET_ISINS = list(FUND_MAP.keys())
 
 # То, что реально отправляем в API (MOEX-коды, где нужно; иначе ISIN как раньше)
 ZPIF_SECIDS = [ISIN_TO_MOEX_CODE.get(isin, isin) for isin in TARGET_ISINS]
+
+# Обратно: SECID -> ISIN (чтобы восстановить isin в ответе API)
+MOEX_CODE_TO_ISIN = {secid: isin for isin, secid in ISIN_TO_MOEX_CODE.items()}
 
 # -----------------------
 # API helpers
@@ -129,10 +133,20 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     if not all_results:
         return pd.DataFrame(columns=["shortname", "fund", "isin", "volume", "value", "numtrades", "close", "tradedate"])
 
-    df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "waprice", "tradedate"]]
+    raw = pd.DataFrame(all_results)
 
+    need_cols = ["shortname", "secid", "isin", "volume", "value", "numtrades", "close", "waprice", "tradedate"]
+    for c in need_cols:
+        if c not in raw.columns:
+            raw[c] = np.nan
 
-    df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "waprice", "tradedate"]]
+    df = raw[need_cols].copy()
+
+    # Восстанавливаем isin по secid, если isin не пришел
+    df["isin"] = df["isin"].fillna(df["secid"].map(MOEX_CODE_TO_ISIN))
+
+# На случаи, когда API положил secid в поле isin
+    df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
 
     df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
     df["value"]     = pd.to_numeric(df["value"], errors="coerce")        # денежныи оборот
