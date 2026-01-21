@@ -270,6 +270,35 @@ def _remove_group(group_name: str):
     gf = [f for f in GROUPS.get(group_name, []) if f in available_funds]
     st.session_state[SELECT_KEY] = sorted(set(st.session_state[SELECT_KEY]) - set(gf))
 
+# квал/неквал
+
+QUAL_BY_ISIN = {
+    "RU000A105328": "квал",
+    "RU000A1068X9": "квал",
+    "RU000A108UH0": "квал",
+    "RU000A108VR7": "квал",
+    "RU000A104KU3": "квал",
+    "RU000A1022Z1": "квал",
+    "RU000A104172": "квал",
+    "RU000A108BZ2": "квал",
+    "RU000A10CFM8": "квал",
+    "RU000A100WZ5": "квал",
+    "RU000A10DQF7": "неквал",
+    "RU000A10A117": "неквал",
+    "RU000A1099U0": "неквал",
+    "RU000A1034U7": "неквал",
+    "RU000A0JWAW3": "неквал",
+    "RU000A102N77": "неквал",
+    "RU000A103B62": "квал",
+    "RU000A108157": "квал",
+    "RU000A10CLY1": "квал",
+    "RU000A1092L4": "неквал",
+    "RU000A10ATA8": "неквал",
+    
+}
+
+df["qual"] = df["isin"].map(QUAL_BY_ISIN).fillna("неизвестно")
+
 with st.expander("Быстрый выбор по УК (добавить/убрать группы)", expanded=False):
     cols = st.columns(len(GROUPS))
     for i, gname in enumerate(GROUPS.keys()):
