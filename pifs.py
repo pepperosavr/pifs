@@ -220,6 +220,35 @@ print(f"Saved snapshot to: {out_path.resolve()}")
 
 # Выбор фондов
 
+# квал/неквал
+
+QUAL_BY_ISIN = {
+    "RU000A105328": "квал",
+    "RU000A1068X9": "квал",
+    "RU000A108UH0": "квал",
+    "RU000A108VR7": "квал",
+    "RU000A104KU3": "квал",
+    "RU000A1022Z1": "квал",
+    "RU000A104172": "квал",
+    "RU000A108BZ2": "квал",
+    "RU000A10CFM8": "квал",
+    "RU000A100WZ5": "квал",
+    "RU000A10DQF7": "неквал",
+    "RU000A10A117": "неквал",
+    "RU000A1099U0": "неквал",
+    "RU000A1034U7": "неквал",
+    "RU000A0JWAW3": "неквал",
+    "RU000A102N77": "неквал",
+    "RU000A103B62": "квал",
+    "RU000A108157": "квал",
+    "RU000A10CLY1": "квал",
+    "RU000A1092L4": "неквал",
+    "RU000A10ATA8": "неквал",
+    
+}
+
+df["qual"] = df["isin"].map(QUAL_BY_ISIN).fillna("неизвестно")
+
 available_funds = sorted(df["fund"].unique().tolist())
 
 SELECT_KEY = "fund_select"
@@ -262,6 +291,11 @@ GROUPS = {
     ],
 }
 
+GROUPS_QUAL = {
+    "Квал":   sorted(df.loc[df["qual"] == "квал", "fund"].dropna().unique().tolist()),
+    "Неквал": sorted(df.loc[df["qual"] == "неквал", "fund"].dropna().unique().tolist()),
+}
+
 def _add_group(group_name: str):
     gf = [f for f in GROUPS.get(group_name, []) if f in available_funds]
     st.session_state[SELECT_KEY] = sorted(set(st.session_state[SELECT_KEY]).union(gf))
@@ -270,36 +304,23 @@ def _remove_group(group_name: str):
     gf = [f for f in GROUPS.get(group_name, []) if f in available_funds]
     st.session_state[SELECT_KEY] = sorted(set(st.session_state[SELECT_KEY]) - set(gf))
 
-# квал/неквал
+def _add_qual(qual_key: str):
+    gf = [f for f in GROUPS_QUAL.get(qual_key, []) if f in available_funds]
+    st.session_state[SELECT_KEY] = sorted(set(st.session_state[SELECT_KEY]).union(gf))
 
-QUAL_BY_ISIN = {
-    "RU000A105328": "квал",
-    "RU000A1068X9": "квал",
-    "RU000A108UH0": "квал",
-    "RU000A108VR7": "квал",
-    "RU000A104KU3": "квал",
-    "RU000A1022Z1": "квал",
-    "RU000A104172": "квал",
-    "RU000A108BZ2": "квал",
-    "RU000A10CFM8": "квал",
-    "RU000A100WZ5": "квал",
-    "RU000A10DQF7": "неквал",
-    "RU000A10A117": "неквал",
-    "RU000A1099U0": "неквал",
-    "RU000A1034U7": "неквал",
-    "RU000A0JWAW3": "неквал",
-    "RU000A102N77": "неквал",
-    "RU000A103B62": "квал",
-    "RU000A108157": "квал",
-    "RU000A10CLY1": "квал",
-    "RU000A1092L4": "неквал",
-    "RU000A10ATA8": "неквал",
-    
-}
+def _remove_qual(qual_key: str):
+    gf = [f for f in GROUPS_QUAL.get(qual_key, []) if f in available_funds]
+    st.session_state[SELECT_KEY] = sorted(set(st.session_state[SELECT_KEY]) - set(gf))
 
-df["qual"] = df["isin"].map(QUAL_BY_ISIN).fillna("неизвестно")
+st.multiselect(
+    "Выберите фонды",
+    options=available_funds,
+    key=SELECT_KEY,
+)
 
-with st.expander("Быстрый выбор по УК (добавить/убрать группы)", expanded=False):
+with st.expander("Быстрый выбор: УК и квал/неквал", expanded=False):
+
+    st.markdown("#### По УК")
     cols = st.columns(len(GROUPS))
     for i, gname in enumerate(GROUPS.keys()):
         with cols[i]:
@@ -309,23 +330,31 @@ with st.expander("Быстрый выбор по УК (добавить/убра
             st.button(f"− {gname}", key=f"btn_rm_{gname}", use_container_width=True,
                       on_click=_remove_group, args=(gname,))
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.button("Выбрать все", use_container_width=True,
+    st.markdown("#### По квалификации")
+    q1, q2 = st.columns(2)
+    with q1:
+        st.button("+ Квал", key="btn_add_qual", use_container_width=True,
+                  on_click=_add_qual, args=("Квал",))
+        st.button("− Квал", key="btn_rm_qual", use_container_width=True,
+                  on_click=_remove_qual, args=("Квал",))
+    with q2:
+        st.button("+ Неквал", key="btn_add_nonqual", use_container_width=True,
+                  on_click=_add_qual, args=("Неквал",))
+        st.button("− Неквал", key="btn_rm_nonqual", use_container_width=True,
+                  on_click=_remove_qual, args=("Неквал",))
+
+    a, b = st.columns(2)
+    with a:
+        st.button("Выбрать все", key="btn_all", use_container_width=True,
                   on_click=lambda: st.session_state.__setitem__(SELECT_KEY, available_funds[:]))
-    with c2:
-        st.button("Снять все", use_container_width=True,
+    with b:
+        st.button("Снять все", key="btn_none", use_container_width=True,
                   on_click=lambda: st.session_state.__setitem__(SELECT_KEY, []))
 
-# multiselect привязан к тому же ключу, что и кнопки
-selected_funds = st.multiselect(
-    "Выберите фонды",
-    options=available_funds,
-    key=SELECT_KEY,
-)
+available_funds = sorted(df["fund"].unique().tolist())
 
-df_sel = df[df["fund"].isin(selected_funds)].copy()
-df_sel = df_sel.sort_values(["tradedate", "fund"])
+selected_funds = st.session_state[SELECT_KEY]
+df_sel = df[df["fund"].isin(selected_funds)].copy().sort_values(["tradedate", "fund"])
 
 if df_sel.empty:
     st.warning("По выбранным фондам нет данных.")
