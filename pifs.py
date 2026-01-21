@@ -224,7 +224,7 @@ def _remove_group(group_name: str):
     gf = [f for f in GROUPS.get(group_name, []) if f in available_funds]
     st.session_state[SELECT_KEY] = sorted(set(st.session_state[SELECT_KEY]) - set(gf))
 
-with st.expander("Быстрыи выбор по УК (добавить/убрать группы)", expanded=False):
+with st.expander("Быстрый выбор по УК (добавить/убрать группы)", expanded=False):
     cols = st.columns(len(GROUPS))
     for i, gname in enumerate(GROUPS.keys()):
         with cols[i]:
@@ -242,7 +242,7 @@ with st.expander("Быстрыи выбор по УК (добавить/убра
         st.button("Снять все", use_container_width=True,
                   on_click=lambda: st.session_state.__setitem__(SELECT_KEY, []))
 
-# ВАЖНО: multiselect привязан к тому же ключу, что и кнопки
+# multiselect привязан к тому же ключу, что и кнопки
 selected_funds = st.multiselect(
     "Выберите фонды",
     options=available_funds,
@@ -370,7 +370,7 @@ if mode == "Режим истории":
         prev_date = all_dates[end_i - 1] if end_i - 1 >= 0 else None
 
         tab_roll, tab_month = st.tabs(
-            [f"Дневная rolling ({VOL_ROLL_N} дней)", "Месячная (Open→Close)"]
+            [f"Дневная )", "Месячная (цена открытия к цене закрытия)"]
         )
 
     # ---------------------------------------------------------
@@ -425,8 +425,7 @@ if mode == "Режим истории":
                 out = out.rename(columns={
                     "fund": "Фонд",
                     "isin": "ISIN",
-                    "vol_roll_daily_pct": f"Дневная волатильность, % (rolling {VOL_ROLL_N})",
-                    "vol_roll_ann_pct": f"Годовая волатильность, % (annualized, rolling {VOL_ROLL_N})",
+                    "vol_roll_daily_pct": f"Дневная волатильность, %",
                 }).sort_values(
                     f"Дневная волатильность, % (rolling {VOL_ROLL_N})",
                     ascending=False,
@@ -434,12 +433,8 @@ if mode == "Режим истории":
                 )
 
                 display = out.copy()
-                display[f"Дневная волатильность, % (rolling {VOL_ROLL_N})"] = display[
-                    f"Дневная волатильность, % (rolling {VOL_ROLL_N})"
-                ].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}%")
-
-                display[f"Годовая волатильность, % (annualized, rolling {VOL_ROLL_N})"] = display[
-                    f"Годовая волатильность, % (annualized, rolling {VOL_ROLL_N})"
+                display[f"Дневная волатильность, %"] = display[
+                    f"Дневная волатильность, %"
                 ].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}%")
 
                 st.dataframe(display, use_container_width=True, hide_index=True)
@@ -450,7 +445,7 @@ if mode == "Режим истории":
         with tab_month:
             # Месяц по выбранной конечной дате
             month_start = end_date_eff.replace(day=1)
-            st.markdown(f"**Месяц:** {month_start} — {end_date_eff} (внутри месяца: доходности Open→Close)")
+            st.markdown(f"**Месяц:** {month_start} — {end_date_eff}")
 
             month_df = price_base[(price_base["tradedate"] >= month_start) & (price_base["tradedate"] <= end_date_eff)].copy()
 
@@ -486,22 +481,16 @@ if mode == "Режим истории":
                 out2 = out2.rename(columns={
                     "fund": "Фонд",
                     "isin": "ISIN",
-                    "days_in_month": "Торговых дней в месяце",
-                    "vol_oc_daily_pct": "Волатильность Open→Close, % (в день, внутри месяца)",
-                    "vol_oc_ann_pct": "Волатильность Open→Close, % годовых (annualized)",
+                    "vol_oc_daily_pct": "Волатильность цены открытия к цене закрытия, %",
                 }).sort_values(
-                    "Волатильность Open→Close, % (в день, внутри месяца)",
+                    "Волатильность цены открытия к цене закрытия, %",
                     ascending=False,
                     na_position="last"
                 )
 
                 display2 = out2.copy()
-                display2["Волатильность Open→Close, % (в день, внутри месяца)"] = display2[
-                    "Волатильность Open→Close, % (в день, внутри месяца)"
-                ].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}%")
-
-                display2["Волатильность Open→Close, % годовых (annualized)"] = display2[
-                    "Волатильность Open→Close, % годовых (annualized)"
+                display2["Волатильность цены открытия к цене закрытия, %"] = display2[
+                    "Волатильность цены открытия к цене закрытия, %"
                 ].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}%")
 
                 st.dataframe(display2, use_container_width=True, hide_index=True)
