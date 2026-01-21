@@ -445,8 +445,6 @@ if mode == "Режим истории":
 
             st.markdown(
                 f"**Месяц:** {month_start} — {end_date_eff}"
-                f"&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
-                f"**Доходности:** ln(Close/Open)"
             )
 
     # Данные внутри месяца до end_date_eff
