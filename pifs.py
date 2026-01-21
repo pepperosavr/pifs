@@ -946,6 +946,8 @@ if mode == "Режим истории":
 
         ISS_BASE = "https://iss.moex.com/iss"
 
+        from datetime import timedelta
+
         INDEX_MAP = {
             "RGBI": "RGBI",
             "RGBITR": "RGBITR",
@@ -1011,7 +1013,36 @@ if mode == "Режим истории":
         )
 
         if not idx_selected:
+
+        if not idx_selected:
             st.info("Выберите хотя бы один индекс.")
+            st.stop()
+
+# --- грузим данные по выбранным индексам в idx_df ---
+        errors = {}
+        idx_frames = []
+
+# берем "достаточно длинный" диапазон, чтобы потом внутри него двигать ползунок
+        idx_to_full = date.today()
+        idx_from_full = idx_to_full - timedelta(days=365 * 5)  # 5 лет
+
+        for secid in idx_selected:
+            try:
+                tmp = load_index_candles(secid, idx_from_full, idx_to_full)
+                if not tmp.empty:
+                    idx_frames.append(tmp)
+            except Exception as e:
+                errors[secid] = str(e)
+
+        if errors:
+            st.warning("Не удалось загрузить часть индексов:\n" + "\n".join([f"{k}: {v}" for k, v in errors.items()]))
+
+        if not idx_frames:
+            st.info("Нет данных по выбранным индексам за доступный период.")
+            st.stop()
+
+        idx_df = pd.concat(idx_frames, ignore_index=True)
+       
         else:
     # idx_df должен содержать данные по индексам за достаточно длинный период
     # и включать только выбранные индексы (иначе отфильтруем)
