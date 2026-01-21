@@ -27,6 +27,8 @@ API_PASS  = get_secret("API_PASS",  "653Bsw")
 
 # 1) НУЖНЫЕ ФОНДЫ (ISIN + названия)
 FUND_MAP = {
+
+    # Парус
     "RU000A105328": "ПАРУС-ЛОГ",
     "RU000A1068X9": "ПАРУС-ДВН",
     "RU000A108UH0": "ПАРУС-КРАС",
@@ -36,10 +38,29 @@ FUND_MAP = {
     "RU000A104172": "ПАРУС-СБЛ",
     "RU000A108BZ2": "ПАРУС-ТРМ",
     "RU000A10CFM8": "ПАРУС-ЗОЛЯ",
+
+    # Акцент
     "RU000A100WZ5": "АКЦЕНТ IV",
     "RU000A10DQF7": "Акцент 5",
+
+    # Самолет 
     "RU000A10A117": "ЗПИФ СМЛТ",
     "RU000A1099U0": "ЗПИФСовр 9",
+    # СФН 
+    "RU000A1034U7": "СФН (RU000A1034U7)",
+    "RU000A0JWAW3": "СФН (RU000A0JWAW3)",
+
+    # ВИМ-Инвестиции 
+    "RU000A102N77": "ВИМ (RU000A102N77)",
+    "RU000A103B62": "ВИМ (RU000A103B62)",
+
+    # Рентал-Про 
+    "RU000A108157": "Рентал-Про (RU000A108157)",
+
+    # Активо ----
+    "RU000A10CLY1": "Активо (RU000A10CLY1)",
+    "RU000A1092L4": "Активо (RU000A1092L4)",
+    "RU000A10ATA8": "Активо (RU000A10ATA8)",
 }
 
 # ВАЖНО: некоторым фондам в API нужно передавать не ISIN, а торговыи код MOEX (SECID/ticker).
@@ -207,13 +228,38 @@ SELECT_KEY = "fund_select"
 if SELECT_KEY not in st.session_state:
     st.session_state[SELECT_KEY] = available_funds[:]  # по умолчанию все
 
-# --- Группы УК / бренды ---
+# --- Группы УК ---
+
 GROUPS = {
     "Парус":  [name for _, name in FUND_MAP.items() if str(name).startswith("ПАРУС-")],
+
     "Акцент": [name for _, name in FUND_MAP.items()
                if str(name).startswith("Акцент") or str(name).upper().startswith("АКЦЕНТ")],
-    "СФН":    [FUND_MAP.get("RU000A1099U0", "ЗПИФСовр 9")],
-    "Самолет":[FUND_MAP.get("RU000A10A117", "ЗПИФ СМЛТ")],
+
+    # СФН
+    "СФН":    [
+        FUND_MAP.get("RU000A1099U0", "ЗПИФСовр 9"),
+        FUND_MAP.get("RU000A1034U7", "СФН (RU000A1034U7)"),
+        FUND_MAP.get("RU000A0JWAW3", "СФН (RU000A0JWAW3)"),
+    ],
+
+    "Самолет": [FUND_MAP.get("RU000A10A117", "ЗПИФ СМЛТ")],
+
+    # ВИМ-Инвестиции
+    "ВИМ-Инвестиции": [
+        FUND_MAP.get("RU000A102N77", "ВИМ (RU000A102N77)"),
+        FUND_MAP.get("RU000A103B62", "ВИМ (RU000A103B62)"),
+    ],
+
+    # Рентал-Про
+    "Рентал-Про": [FUND_MAP.get("RU000A108157", "Рентал-Про (RU000A108157)")],
+
+    # Активо
+    "Активо": [
+        FUND_MAP.get("RU000A10CLY1", "Активо (RU000A10CLY1)"),
+        FUND_MAP.get("RU000A1092L4", "Активо (RU000A1092L4)"),
+        FUND_MAP.get("RU000A10ATA8", "Активо (RU000A10ATA8)"),
+    ],
 }
 
 def _add_group(group_name: str):
