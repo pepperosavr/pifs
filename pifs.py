@@ -763,20 +763,20 @@ if mode == "Режим истории":
             fig_idx = px.line(
                 idx_df,
                 x="tradedate",
-                y="close",                      # <-- ВАЖНО: теперь рисуем уровень, а не %
+                y="close",  # рисуем уровень индекса
                 color="index_name",
                 markers=True,
                 custom_data=["close_fmt"],
                 labels={"close": "Значение индекса", "tradedate": "Дата", "index_name": "Индекс"},
             )
 
-        # разделители для оси (тысячи пробелом, десятичная точка)
+        # разделители: десятичная ".", тысячи " "
             fig_idx.update_layout(separators=". ")
 
-        # чтобы Plotly не уходил в 7.8B / 12M на оси
+        # убираем 7.8B / 12M на оси
             fig_idx.update_yaxes(tickformat=",.4f")
-    
-        fig_idx.update_traces(
+
+            fig_idx.update_traces(
                 hovertemplate=(
                     "Дата: %{x|%Y-%m-%d}<br>"
                     "Индекс: %{fullData.name}<br>"
@@ -784,9 +784,9 @@ if mode == "Режим истории":
                     f"Окно: {start_date} — {end_date} ({window} торг. днеи)<br>"
                     "<extra></extra>"
                 )
-            )
+        )
 
-            st.plotly_chart(fig_idx, use_container_width=True)
+        st.plotly_chart(fig_idx, use_container_width=True)
     else:
         st.caption("Индексы не выбраны.")
 
