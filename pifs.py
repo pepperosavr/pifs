@@ -505,23 +505,23 @@ if mode == "Режим истории":
                         how="left"
                     )
 
+                    col_name = f"Волатильность цены открытия к цене закрытия, % (за {n_days} дней)"
                     out2 = out2.rename(columns={
                         "fund": "Фонд",
                         "isin": "ISIN",
                         "n_obs": "Число наблюдений",
-                        "vol_oc_daily_pct": f"Волатильность цены открытия к цене закрытия, % (за {n_days} дней)",
-                    }).sort_values(
-                        f"Волатильность Open→Close, % (за {n_days} дней)",
-                        ascending=False,
-                        na_position="last"
-                    )
+                        "vol_oc_daily_pct": col_name,
+                    })
+
+            # сортируем по реально существующей колонке
+                    out2 = out2.sort_values(col_name, ascending=False, na_position="last")
 
                     display2 = out2.copy()
-                    display2[f"Волатильность цены открытия к цене закрытия, % (за {n_days} дней)"] = display2[
-                        f"Волатильность цены открытия к цене закрытия, % (за {n_days} дней)"
-                    ].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}%")
+                    display2[col_name] = display2[col_name].map(
+                        lambda x: "—" if pd.isna(x) else f"{x:.2f}%"
+                    )
 
-                    st.dataframe(display2, use_container_width=True, hide_index=True)    
+                    st.dataframe(display2, use_container_width=True, hide_index=True)
 
     # -------- 7b) Оборот торгов: Таблица + Логарифм. график + Гистограмма --------
     st.subheader("Оборот торгов")
