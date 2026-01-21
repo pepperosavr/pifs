@@ -80,6 +80,121 @@ ZPIF_SECIDS = [ISIN_TO_MOEX_CODE.get(isin, isin) for isin in TARGET_ISINS]
 # Обратно: SECID -> ISIN (чтобы восстановить isin в ответе API)
 MOEX_CODE_TO_ISIN = {secid: isin for isin, secid in ISIN_TO_MOEX_CODE.items()}
 
+ISS_BASE = "https://iss.moex.com/iss"
+
+INDEX_MAP = {
+    "RGBI": "RGBI (ОФЗ, price)",
+    "RGBITR": "RGBITR (ОФЗ, total return)",
+    "RUCBCPNS": "RUCBCPNS (корп. облигации, price)",
+    "RUCBTRNS": "RUCBTRNS (корп. облигации, total return)",
+    "RUSFAR": "RUSFAR (ставка)",
+    "MREDC": "MREDC",
+    "CREI": "CREI",
+    "MREF": "MREF",
+}
+
+def _iss_get_primary_board(secid: str) -> tuple[str, str, str] | None:
+    url = f"{ISS_BASE}/securities/{secid}.json"
+    params = {"iss.meta": "off", "iss.only": "boards"}
+    r = requests.get(url, params=params, timeout=60)
+    if r.status_code != 200:
+        return None
+
+    js = r.json()
+    boards = js.get("boards", {})
+    cols = boards.get("columns", [])
+    data = boards.get("data", [])
+    if not cols or not data:
+        return None
+
+    bdf = pd.DataFrame(data, columns=cols)
+
+    # нормализуем имена на всякий случай
+    for c in ["is_primary", "is_traded"]:
+        if c in bdf.columns:
+            bdf[c] = pd.to_numeric(bdf[c], errors="coerce")
+
+    # кандидаты: primary + traded
+    cand = bdf
+    if "is_traded" in bdf.columns:
+        cand = cand[cand["is_traded"] == 1]
+    if "is_primary" in cand.columns and not cand[cand["is_primary"] == 1].empty:
+        cand = cand[cand["is_primary"] == 1]
+
+    if cand.empty:
+        cand = bdf
+
+    row = cand.iloc[0]
+    # ожидаемые поля у boards: engine, market, boardid
+    if not all(k in row.index for k in ["engine", "market", "boardid"]):
+        return None
+
+    return str(row["engine"]), str(row["market"]), str(row["boardid"])
+
+def _iss_fetch_history_close(secid: str, date_from: str, date_to: str) -> pd.DataFrame:
+    info = _iss_get_primary_board(secid)
+    if info is None:
+        return pd.DataFrame(columns=["tradedate", "secid", "close"])
+
+    engine, market, boardid = info
+
+    # пробуем с boards (самый частый кейс)
+    url1 = f"{ISS_BASE}/history/engines/{engine}/markets/{market}/boards/{boardid}/securities/{secid}.json"
+    # fallback: без boards (на случай нестандартной публикации)
+    url2 = f"{ISS_BASE}/history/engines/{engine}/markets/{market}/securities/{secid}.json"
+
+    params_base = {
+        "iss.meta": "off",
+        "iss.only": "history",
+        "from": date_from,
+        "till": date_to,
+        "history.columns": "TRADEDATE,CLOSE",
+    }
+
+    frames = []
+    start = 0
+    while True:
+        params = dict(params_base)
+        params["start"] = start
+
+        r = requests.get(url1, params=params, timeout=60)
+        if r.status_code != 200:
+            r = requests.get(url2, params=params, timeout=60)
+            if r.status_code != 200:
+                # не падаем всем приложением из-за индекса
+                break
+
+        js = r.json()
+        hist = js.get("history", {})
+        cols = hist.get("columns", [])
+        data = hist.get("data", [])
+        if not data:
+            break
+
+        chunk = pd.DataFrame(data, columns=cols)
+        frames.append(chunk)
+        start += len(chunk)
+
+    if not frames:
+        return pd.DataFrame(columns=["tradedate", "secid", "close"])
+
+    out = pd.concat(frames, ignore_index=True)
+    out = out.rename(columns={"TRADEDATE": "tradedate", "CLOSE": "close"})
+    out["tradedate"] = pd.to_datetime(out["tradedate"], errors="coerce").dt.date
+    out["close"] = pd.to_numeric(out["close"], errors="coerce")
+    out["secid"] = secid
+    out = out.dropna(subset=["tradedate", "close"])
+    return out[["tradedate", "secid", "close"]]
+
+@st.cache_data(ttl=24 * 60 * 60)
+def load_indices_iss(secids: tuple[str, ...], date_from: str, date_to: str) -> pd.DataFrame:
+    frames = []
+    for s in secids:
+        frames.append(_iss_fetch_history_close(s, date_from, date_to))
+    if not frames:
+        return pd.DataFrame(columns=["tradedate", "secid", "close"])
+    return pd.concat(frames, ignore_index=True)
+
 # -----------------------
 # API helpers
 # -----------------------
@@ -941,6 +1056,59 @@ if mode == "Режим истории":
             )
 
             st.dataframe(display, use_container_width=True, hide_index=True)
+
+# индексы МБ : изменение за окно
+
+st.subheader("Индексы Мосбиржи")
+
+if idx_selected:
+    # ISS принимает YYYY-MM-DD
+    idx_date_from = start_date.strftime("%Y-%m-%d")
+    idx_date_to = end_date.strftime("%Y-%m-%d")
+
+    idx_df = load_indices_iss(tuple(idx_selected), idx_date_from, idx_date_to)
+
+    if idx_df.empty:
+        st.info("По выбранным индексам нет данных за это окно.")
+    else:
+        idx_df["index_name"] = idx_df["secid"].map(INDEX_MAP).fillna(idx_df["secid"])
+        idx_df = idx_df.sort_values(["secid", "tradedate"])
+
+        # --- формат для hover: пробелы как разделитель тысяч ---
+        idx_df["close_fmt"] = idx_df["close"].map(
+            lambda v: f"{v:,.4f}".rstrip("0").rstrip(".").replace(",", " ") if pd.notna(v) else "—"
+        )
+
+        fig_idx = px.line(
+            idx_df,
+            x="tradedate",
+            y="close",                      # <-- ВАЖНО: теперь рисуем уровень, а не %
+            color="index_name",
+            markers=True,
+            custom_data=["close_fmt"],
+            labels={"close": "Значение индекса", "tradedate": "Дата", "index_name": "Индекс"},
+        )
+
+        # разделители для оси (тысячи пробелом, десятичная точка)
+        fig_idx.update_layout(separators=". ")
+
+        # чтобы Plotly не уходил в 7.8B / 12M на оси
+        fig_idx.update_yaxes(tickformat=",.4f")
+
+        fig_idx.update_traces(
+            hovertemplate=(
+                "Дата: %{x|%Y-%m-%d}<br>"
+                "Индекс: %{fullData.name}<br>"
+                "Значение: %{customdata[0]}<br>"
+                f"Окно: {start_date} — {end_date} ({window} торг. днеи)<br>"
+                "<extra></extra>"
+            )
+        )
+
+        st.plotly_chart(fig_idx, use_container_width=True)
+else:
+    st.caption("Индексы не выбраны.")
+
 
 # ---------- РЕЖИМ 2: СРАВНЕНИЕ (сегодня vs предыдущий торговыи день) ----------
 else:
