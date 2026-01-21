@@ -200,13 +200,13 @@ print(f"Saved snapshot to: {out_path.resolve()}")
 
 available_funds = sorted(df["fund"].unique().tolist())
 
-selected_funds = st.multiselect(
-    "Выберите фонды",
-    available_funds,
-    default=available_funds,   # по умолчанию все 13
-)
+SELECT_KEY = "fund_select"
 
-# --- Группы УК / бренды (явно задаем списки фондов по названиям из FUND_MAP) ---
+# инициализация выбранных фондов (один раз)
+if SELECT_KEY not in st.session_state:
+    st.session_state[SELECT_KEY] = available_funds[:]  # по умолчанию все
+
+# --- Группы УК / бренды ---
 GROUPS = {
     "Парус":  [name for _, name in FUND_MAP.items() if str(name).startswith("ПАРУС-")],
     "Акцент": [name for _, name in FUND_MAP.items()
@@ -214,13 +214,6 @@ GROUPS = {
     "СФН":    [FUND_MAP.get("RU000A1099U0", "ЗПИФСовр 9")],
     "Самолет":[FUND_MAP.get("RU000A10A117", "ЗПИФ СМЛТ")],
 }
-
-# ключ именно для виджета multiselect (НЕ используем тот же ключ как "переменную")
-SELECT_KEY = "fund_select"
-
-# инициализация выбранных фондов (один раз)
-if SELECT_KEY not in st.session_state:
-    st.session_state[SELECT_KEY] = available_funds[:]  # по умолчанию все
 
 def _add_group(group_name: str):
     gf = [f for f in GROUPS.get(group_name, []) if f in available_funds]
@@ -247,6 +240,13 @@ with st.expander("Быстрыи выбор по УК (добавить/убра
     with c2:
         st.button("Снять все", use_container_width=True,
                   on_click=lambda: st.session_state.__setitem__(SELECT_KEY, []))
+
+# ВАЖНО: multiselect привязан к тому же ключу, что и кнопки
+selected_funds = st.multiselect(
+    "Выберите фонды",
+    options=available_funds,
+    key=SELECT_KEY,
+)
 
 df_sel = df[df["fund"].isin(selected_funds)].copy()
 df_sel = df_sel.sort_values(["tradedate", "fund"])
