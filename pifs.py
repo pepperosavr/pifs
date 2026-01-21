@@ -370,7 +370,7 @@ if mode == "Режим истории":
         prev_date = all_dates[end_i - 1] if end_i - 1 >= 0 else None
 
         tab_roll, tab_month = st.tabs(
-            [f"Дневная )", "Месячная (цена открытия к цене закрытия)"]
+            [f"Дневная", "Месячная (цена открытия к цене закрытия)"]
         )
 
     # ---------------------------------------------------------
@@ -401,9 +401,6 @@ if mode == "Режим истории":
             # дневная волатильность в %
                 price_base["vol_roll_daily_pct"] = price_base["vol_roll_daily"] * 100.0
 
-            # (опционально) годовая, если нужно сопоставлять "как в finance"
-                price_base["vol_roll_ann_pct"] = price_base["vol_roll_daily"] * np.sqrt(252) * 100.0
-
             # Берем значение на дату <= prev_date (если у фонда нет ровно prev_date, берем последнее до нее)
                 asof = (
                     price_base[price_base["tradedate"] <= prev_date]
@@ -417,7 +414,7 @@ if mode == "Режим истории":
                 skeleton = df_sel[["label", "fund", "isin"]].drop_duplicates()
 
                 out = skeleton.merge(
-                    asof[["label", "vol_roll_daily_pct", "vol_roll_ann_pct"]],
+                    asof[["label", "vol_roll_daily_pct"]],
                     on="label",
                     how="left"
                 )
@@ -473,7 +470,7 @@ if mode == "Режим истории":
 
                 skeleton = df_sel[["label", "fund", "isin"]].drop_duplicates()
                 out2 = skeleton.merge(
-                    month_tbl[["label", "days_in_month", "vol_oc_daily_pct", "vol_oc_ann_pct"]],
+                    month_tbl[["label", "days_in_month", "vol_oc_daily_pct"]],
                     on="label",
                     how="left"
                 )
