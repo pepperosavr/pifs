@@ -1057,58 +1057,6 @@ if mode == "Режим истории":
 
             st.dataframe(display, use_container_width=True, hide_index=True)
 
-# индексы МБ : изменение за окно
-
-    st.subheader("Индексы Мосбиржи")
-
-    if idx_selected:
-    # ISS принимает YYYY-MM-DD
-        idx_date_from = start_date.strftime("%Y-%m-%d")
-        idx_date_to = end_date.strftime("%Y-%m-%d")
-
-        idx_df = load_indices_iss(tuple(idx_selected), idx_date_from, idx_date_to)
-
-        if idx_df.empty:
-            st.info("По выбранным индексам нет данных за это окно.")
-        else:
-            idx_df["index_name"] = idx_df["secid"].map(INDEX_MAP).fillna(idx_df["secid"])
-            idx_df = idx_df.sort_values(["secid", "tradedate"])
-
-        # --- формат для hover: пробелы как разделитель тысяч ---
-            idx_df["close_fmt"] = idx_df["close"].map(
-                lambda v: f"{v:,.4f}".rstrip("0").rstrip(".").replace(",", " ") if pd.notna(v) else "—"
-            )
-
-            fig_idx = px.line(
-                idx_df,
-                x="tradedate",
-                y="close",                      # <-- ВАЖНО: теперь рисуем уровень, а не %
-                color="index_name",
-                markers=True,
-                custom_data=["close_fmt"],
-                labels={"close": "Значение индекса", "tradedate": "Дата", "index_name": "Индекс"},
-            )
-
-        # разделители для оси (тысячи пробелом, десятичная точка)
-            fig_idx.update_layout(separators=". ")
-
-        # чтобы Plotly не уходил в 7.8B / 12M на оси
-            fig_idx.update_yaxes(tickformat=",.4f")
-    
-        fig_idx.update_traces(
-                hovertemplate=(
-                    "Дата: %{x|%Y-%m-%d}<br>"
-                    "Индекс: %{fullData.name}<br>"
-                    "Значение: %{customdata[0]}<br>"
-                    f"Окно: {start_date} — {end_date} ({window} торг. днеи)<br>"
-                    "<extra></extra>"
-                )
-            )
-
-            st.plotly_chart(fig_idx, use_container_width=True)
-    else:
-        st.caption("Индексы не выбраны.")
-
 
 # ---------- РЕЖИМ 2: СРАВНЕНИЕ (сегодня vs предыдущий торговыи день) ----------
 else:
