@@ -47,6 +47,7 @@ FUND_MAP = {
 ISIN_TO_MOEX_CODE = {
     "RU000A10DQF7": "XACCSK", # Акцент 5
     "RU000A10A117": "XHOUSE", # самолет
+    "RU000A108BZ2": "XTRIUMF" # триумф
 }
 
 # То, что хотим видеть в итоговых данных (ISIN-ы)
