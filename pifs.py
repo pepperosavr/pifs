@@ -1054,9 +1054,6 @@ if mode == "Режим истории":
                 "<extra></extra>"
             )
         )
-        st.plotly_chart(fig_idx, use_container_width=True)
-    else:
-        st.caption("Индексы не выбраны.")
 
 
 # ---------- РЕЖИМ 2: СРАВНЕНИЕ (сегодня vs предыдущий торговыи день) ----------
