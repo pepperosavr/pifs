@@ -427,7 +427,7 @@ if mode == "Режим истории":
                     "isin": "ISIN",
                     "vol_roll_daily_pct": f"Дневная волатильность, %",
                 }).sort_values(
-                    f"Дневная волатильность, % (rolling {VOL_ROLL_N})",
+                    f"Дневная волатильность, %",
                     ascending=False,
                     na_position="last"
                 )
