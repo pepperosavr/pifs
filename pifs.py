@@ -947,12 +947,11 @@ if mode == "Режим истории":
         ISS_BASE = "https://iss.moex.com/iss"
 
         INDEX_MAP = {
-            "RGBI": "RGBI (ОФЗ, price)",
-            "RGBITR": "RGBITR (ОФЗ, total return)",
-            "RUCBCPNS": "RUCBCPNS (корп. облигации, price)",
-            "RUCBTRNS": "RUCBTRNS (корп. облигации, total return)",
-            "RUSFAR": "RUSFAR (ставка)",
-            "MREDC": "MREDC",
+            "RGBI": "RGBI",
+            "RGBITR": "RGBITR",
+            "RUCBCPNS": "RUCBCPNS",
+            "RUCBTRNS": "RUCBTRNS",
+            "RUSFAR": "RUSFAR",
             "CREI": "CREI",
             "MREF": "MREF",
         }
@@ -1000,13 +999,13 @@ if mode == "Режим истории":
             out["secid"] = secid
             return out
 
-        st.subheader("Индексы Московскои биржи: изменение значении за выбранныи период")
+        st.subheader("Индексы Московскои биржи за выбранный период")
 
         IDX_KEY = "idx_select"
         idx_selected = st.multiselect(
             "Выберите индексы",
             options=list(INDEX_MAP.keys()),
-            default=["RGBI", "RGBITR"],
+            default=["RGBI", "RGBITR", "RUCBCPNS", "RUCBTRNS", "RUSFAR", "CREI", "MREF"],
             key=IDX_KEY,
             format_func=lambda x: f"{x} — {INDEX_MAP.get(x, x)}",
         )
@@ -1026,8 +1025,6 @@ if mode == "Режим истории":
             if idx_frames:
                 idx_df = pd.concat(idx_frames, ignore_index=True)
                 idx_df = idx_df.sort_values(["secid", "tradedate"])
-
-        # изменение к первои доступнои дате в окне (как у фондов)
 
         idx_df["label"] = idx_df["secid"].map(INDEX_MAP).fillna(idx_df["secid"])
 
@@ -1050,7 +1047,6 @@ if mode == "Режим истории":
                 "Дата: %{x|%Y-%m-%d}<br>"
                 "Индекс: %{customdata[0]}<br>"
                 "Значение: %{y:,.2f}<br>"
-                f"Окно: {start_date} — {end_date}<br>"
                 "<extra></extra>"
             )
         )
