@@ -79,122 +79,6 @@ ZPIF_SECIDS = [ISIN_TO_MOEX_CODE.get(isin, isin) for isin in TARGET_ISINS]
 
 # Обратно: SECID -> ISIN (чтобы восстановить isin в ответе API)
 MOEX_CODE_TO_ISIN = {secid: isin for isin, secid in ISIN_TO_MOEX_CODE.items()}
-
-ISS_BASE = "https://iss.moex.com/iss"
-
-INDEX_MAP = {
-    "RGBI": "RGBI (ОФЗ, price)",
-    "RGBITR": "RGBITR (ОФЗ, total return)",
-    "RUCBCPNS": "RUCBCPNS (корп. облигации, price)",
-    "RUCBTRNS": "RUCBTRNS (корп. облигации, total return)",
-    "RUSFAR": "RUSFAR (ставка)",
-    "MREDC": "MREDC",
-    "CREI": "CREI",
-    "MREF": "MREF",
-}
-
-def _iss_get(url: str, params: dict | None = None) -> dict:
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()
-    return r.json()
-
-@st.cache_data(ttl=24 * 60 * 60)
-def resolve_board(secid: str) -> tuple[str, str, str]:
-    """
-    Определяем engine/market/boardid для инструмента через /iss/securities/{secid}.
-    Это нужно, потому что разные индексы могут жить на разных boards.
-    """
-    j = _iss_get(f"{ISS_BASE}/securities/{secid}.json", params={"iss.meta": "off", "iss.only": "boards"})
-    boards = pd.DataFrame(j["boards"]["data"], columns=j["boards"]["columns"])
-
-    # наиболее частый случай: engine=stock, market=index, is_traded=1
-    if "is_traded" in boards.columns:
-        boards = boards.sort_values("is_traded", ascending=False)
-
-    cand = boards[boards.get("engine").astype(str).eq("stock")] if "engine" in boards.columns else boards
-    pref = cand[cand.get("market").astype(str).eq("index")] if "market" in cand.columns else cand
-
-    pick = pref.iloc[0] if len(pref) else cand.iloc[0]
-    return str(pick["engine"]), str(pick["market"]), str(pick["boardid"])
-
-@st.cache_data(ttl=24 * 60 * 60)
-def load_index_candles(secid: str, d_from: date, d_to: date) -> pd.DataFrame:
-    engine, market, board = resolve_board(secid)
-    url = f"{ISS_BASE}/engines/{engine}/markets/{market}/boards/{board}/securities/{secid}/candles.json"
-
-    j = _iss_get(url, params={
-        "from": d_from.isoformat(),
-        "till": d_to.isoformat(),
-        "interval": 24,        # дневные свечи
-        "iss.meta": "off",
-    })
-
-    candles = pd.DataFrame(j["candles"]["data"], columns=j["candles"]["columns"])
-    # типичные поля: begin, open, close, high, low, value, volume
-    if candles.empty or "close" not in candles.columns:
-        return pd.DataFrame(columns=["secid", "tradedate", "close"])
-
-    candles["tradedate"] = pd.to_datetime(candles["begin"], errors="coerce").dt.date
-    candles["close"] = pd.to_numeric(candles["close"], errors="coerce")
-    out = candles[["tradedate", "close"]].dropna().copy()
-    out["secid"] = secid
-    return out
-
-st.subheader("Индексы Московскои биржи: изменение значении за выбранныи период")
-
-IDX_KEY = "idx_select"
-idx_selected = st.multiselect(
-    "Выберите индексы",
-    options=list(INDEX_MAP.keys()),
-    default=["RGBI", "RGBITR"],
-    key=IDX_KEY,
-    format_func=lambda x: f"{x} — {INDEX_MAP.get(x, x)}",
-)
-
-if idx_selected:
-    idx_frames = []
-    idx_errors = []
-    for s in idx_selected:
-        try:
-            idx_frames.append(load_index_candles(s, start_date, end_date))
-        except Exception as e:
-            idx_errors.append(f"{s}: {e}")
-
-    if idx_errors:
-        st.warning("Не удалось загрузить часть индексов:\n\n" + "\n".join(idx_errors))
-
-    if idx_frames:
-        idx_df = pd.concat(idx_frames, ignore_index=True)
-        idx_df = idx_df.sort_values(["secid", "tradedate"])
-
-        # изменение к первои доступнои дате в окне (как у фондов)
-        base = idx_df.groupby("secid")["close"].transform("first")
-        idx_df["change_pct"] = (idx_df["close"] / base - 1.0) * 100.0
-        idx_df["label"] = idx_df["secid"].map(INDEX_MAP).fillna(idx_df["secid"])
-
-        fig_idx = px.line(
-            idx_df,
-            x="tradedate",
-            y="change_pct",
-            color="label",
-            markers=True,
-            labels={"change_pct": "Изменение, %", "tradedate": "Дата"},
-            custom_data=["secid", "close"],
-        )
-        fig_idx.update_layout(separators=". ")
-        fig_idx.update_traces(
-            hovertemplate=(
-                "Дата: %{x|%Y-%m-%d}<br>"
-                "Индекс: %{customdata[0]}<br>"
-                "Значение: %{customdata[1]:.2f}<br>"
-                "Изменение: %{y:.2f}%<br>"
-                f"Окно: {start_date} — {end_date}<br>"
-                "<extra></extra>"
-            )
-        )
-        st.plotly_chart(fig_idx, use_container_width=True)
-else:
-    st.caption("Индексы не выбраны.")
     
 # -----------------------
 # API helpers
@@ -1057,6 +941,122 @@ if mode == "Режим истории":
             )
 
             st.dataframe(display, use_container_width=True, hide_index=True)
+
+        # мосбиржа
+
+        ISS_BASE = "https://iss.moex.com/iss"
+
+        INDEX_MAP = {
+            "RGBI": "RGBI (ОФЗ, price)",
+            "RGBITR": "RGBITR (ОФЗ, total return)",
+            "RUCBCPNS": "RUCBCPNS (корп. облигации, price)",
+            "RUCBTRNS": "RUCBTRNS (корп. облигации, total return)",
+            "RUSFAR": "RUSFAR (ставка)",
+            "MREDC": "MREDC",
+            "CREI": "CREI",
+            "MREF": "MREF",
+        }
+
+        def _iss_get(url: str, params: dict | None = None) -> dict:
+            r = requests.get(url, params=params, timeout=30)
+            r.raise_for_status()
+            return r.json()
+
+        @st.cache_data(ttl=24 * 60 * 60)
+        def resolve_board(secid: str) -> tuple[str, str, str]:
+            j = _iss_get(f"{ISS_BASE}/securities/{secid}.json", params={"iss.meta": "off", "iss.only": "boards"})
+            boards = pd.DataFrame(j["boards"]["data"], columns=j["boards"]["columns"])
+
+    # наиболее частый случай: engine=stock, market=index, is_traded=1
+            if "is_traded" in boards.columns:
+                boards = boards.sort_values("is_traded", ascending=False)
+
+            cand = boards[boards.get("engine").astype(str).eq("stock")] if "engine" in boards.columns else boards
+            pref = cand[cand.get("market").astype(str).eq("index")] if "market" in cand.columns else cand
+
+            pick = pref.iloc[0] if len(pref) else cand.iloc[0]
+            return str(pick["engine"]), str(pick["market"]), str(pick["boardid"])
+
+        @st.cache_data(ttl=24 * 60 * 60)
+        def load_index_candles(secid: str, d_from: date, d_to: date) -> pd.DataFrame:
+            engine, market, board = resolve_board(secid)
+            url = f"{ISS_BASE}/engines/{engine}/markets/{market}/boards/{board}/securities/{secid}/candles.json"
+
+            j = _iss_get(url, params={
+                "from": d_from.isoformat(),
+                "till": d_to.isoformat(),
+                "interval": 24,        # дневные свечи
+                "iss.meta": "off",
+            })
+
+            candles = pd.DataFrame(j["candles"]["data"], columns=j["candles"]["columns"])
+    # типичные поля: begin, open, close, high, low, value, volume
+            if candles.empty or "close" not in candles.columns:
+                return pd.DataFrame(columns=["secid", "tradedate", "close"])
+
+            candles["tradedate"] = pd.to_datetime(candles["begin"], errors="coerce").dt.date
+            candles["close"] = pd.to_numeric(candles["close"], errors="coerce")
+            out = candles[["tradedate", "close"]].dropna().copy()
+            out["secid"] = secid
+            return out
+
+        st.subheader("Индексы Московскои биржи: изменение значении за выбранныи период")
+
+        IDX_KEY = "idx_select"
+        idx_selected = st.multiselect(
+            "Выберите индексы",
+            options=list(INDEX_MAP.keys()),
+            default=["RGBI", "RGBITR"],
+            key=IDX_KEY,
+            format_func=lambda x: f"{x} — {INDEX_MAP.get(x, x)}",
+        )
+
+        if idx_selected:
+            idx_frames = []
+            idx_errors = []
+            for s in idx_selected:
+                try:
+                    idx_frames.append(load_index_candles(s, start_date, end_date))
+                except Exception as e:
+                    idx_errors.append(f"{s}: {e}")
+
+            if idx_errors:
+                st.warning("Не удалось загрузить часть индексов:\n\n" + "\n".join(idx_errors))
+
+            if idx_frames:
+                idx_df = pd.concat(idx_frames, ignore_index=True)
+                idx_df = idx_df.sort_values(["secid", "tradedate"])
+
+        # изменение к первои доступнои дате в окне (как у фондов)
+
+        idx_df["label"] = idx_df["secid"].map(INDEX_MAP).fillna(idx_df["secid"])
+
+        fig_idx = px.line(
+            idx_df,
+            x="tradedate",
+            y="close",
+            color="label",
+            markers=True,
+            labels={"close": "Значение индекса", "tradedate": "Дата"},
+            custom_data=["secid"],
+        )
+
+   
+       
+        fig_idx.update_layout(separators=". ")
+
+        fig_idx.update_traces(
+            hovertemplate=(
+                "Дата: %{x|%Y-%m-%d}<br>"
+                "Индекс: %{customdata[0]}<br>"
+                "Значение: %{y:,.2f}<br>"
+                f"Окно: {start_date} — {end_date}<br>"
+                "<extra></extra>"
+            )
+        )
+        st.plotly_chart(fig_idx, use_container_width=True)
+    else:
+        st.caption("Индексы не выбраны.")
 
 
 # ---------- РЕЖИМ 2: СРАВНЕНИЕ (сегодня vs предыдущий торговыи день) ----------
