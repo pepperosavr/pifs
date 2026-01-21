@@ -231,34 +231,34 @@ if SELECT_KEY not in st.session_state:
 # --- Группы УК ---
 
 GROUPS = {
-    "Парус":  [name for _, name in FUND_MAP.items() if str(name).startswith("ПАРУС-")],
-
+    
     "Акцент": [name for _, name in FUND_MAP.items()
                if str(name).startswith("Акцент") or str(name).upper().startswith("АКЦЕНТ")],
+    "Парус":  [name for _, name in FUND_MAP.items() if str(name).startswith("ПАРУС-")],
 
     # СФН
     "СФН":    [
         FUND_MAP.get("RU000A1099U0", "ЗПИФСовр 9"),
-        FUND_MAP.get("RU000A1034U7", "СФН (RU000A1034U7)"),
-        FUND_MAP.get("RU000A0JWAW3", "СФН (RU000A0JWAW3)"),
+        FUND_MAP.get("RU000A1034U7", "ЗПИФСовр 7"),
+        FUND_MAP.get("RU000A0JWAW3", "СоврАрБизн"),
     ],
 
     "Самолет": [FUND_MAP.get("RU000A10A117", "ЗПИФ СМЛТ")],
 
     # ВИМ-Инвестиции
     "ВИМ-Инвестиции": [
-        FUND_MAP.get("RU000A102N77", "ВИМ (RU000A102N77)"),
-        FUND_MAP.get("RU000A103B62", "ВИМ (RU000A103B62)"),
+        FUND_MAP.get("RU000A102N77", "РД"),
+        FUND_MAP.get("RU000A103B62", "РД ПРО"),
     ],
 
-    # Рентал-Про
-    "Рентал-Про": [FUND_MAP.get("RU000A108157", "Рентал-Про (RU000A108157)")],
+    # АБ Капитал
+    "АБ-Капитал": [FUND_MAP.get("RU000A108157", "Рентал-Про")],
 
     # Активо
     "Активо": [
-        FUND_MAP.get("RU000A10CLY1", "Активо (RU000A10CLY1)"),
-        FUND_MAP.get("RU000A1092L4", "Активо (RU000A1092L4)"),
-        FUND_MAP.get("RU000A10ATA8", "Активо (RU000A10ATA8)"),
+        FUND_MAP.get("RU000A10CLY1", "АКТИВО ДВАДЦАТЬ ОДИН"),
+        FUND_MAP.get("RU000A1092L4", "АКТИВО ДВАДЦАТЬ"),
+        FUND_MAP.get("RU000A10ATA8", "АКТИВО ФЛИППИНГ"),
     ],
 }
 
