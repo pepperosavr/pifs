@@ -114,7 +114,7 @@ def fetch_all_trading_results(token: str, instruments: list[str], date_from: str
         body = {
             "engine": "stock",
             "market": "shares",
-            "boardid": ["TQIF"],
+            "boardid": ["TQIF", "LIQR"],
             "instruments": instruments,
             "dateFrom": date_from,
             "dateTo": date_to,
@@ -949,13 +949,13 @@ if mode == "Режим истории":
         from datetime import timedelta
 
         INDEX_MAP = {
-            "RGBI",
-            "RGBITR",
-            "RUCBCPNS",
-            "RUCBTRNS",
-            "RUSFAR",
-            "CREI",
-            "MREF",
+            "RGBI": "RGBI",
+            "RGBITR": "RGBITR",
+            "RUCBCPNS": "RUCBCPNS",
+            "RUCBTRNS": "RUCBTRNS",
+            "RUSFAR": "RUSFAR",
+            "CREI": "CREI",
+            "MREF": "MREF",
         }
 
         def _iss_get(url: str, params: dict | None = None) -> dict:
@@ -1037,7 +1037,6 @@ if mode == "Режим истории":
             options=list(INDEX_MAP.keys()),
             default=["RGBI", "RGBITR", "RUCBCPNS", "RUCBTRNS", "RUSFAR", "CREI", "MREF"],
             key=IDX_KEY,
-            format_func=lambda x: f"{x} — {INDEX_MAP.get(x, x)}",
         )
 
         if not idx_selected:
@@ -1075,7 +1074,7 @@ if mode == "Режим истории":
         idx_df = idx_df.dropna(subset=["tradedate", "close"]).copy()
 
 # метка для легенды/цветов
-        idx_df["label"] = idx_df["secid"].map(lambda s: f"{s} — {INDEX_MAP.get(s, s)}")
+        idx_df["label"] = idx_df["secid"]
 
 # Даты по выбранным индексам
         idx_dates = sorted(idx_df["tradedate"].unique().tolist())
