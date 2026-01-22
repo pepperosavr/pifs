@@ -210,11 +210,6 @@ date_from = "2025-01-01T00:00:00Z"
 date_to   = utc_now.strftime("%Y-%m-%dT23:59:59Z")
 
 df = load_df(ZPIF_SECIDS, date_from, date_to)
-
-if section == "Основные графики":
-    date_from_short = "2025-01-01T00:00:00Z"
-    df = load_df(ZPIF_SECIDS, date_from_short, date_to)
-    df = df[df["isin"].isin(TARGET_ISINS)].copy()
     
 # На всякии случаи: оставляем только целевые ISIN (если в ответе вдруг будут лишние инструменты)
 df = df[df["isin"].isin(TARGET_ISINS)].copy()
@@ -411,10 +406,6 @@ if mode == "Режим истории":
     start_date = available_dates[start_idx]
 
     # -------- 7a3) Доходность (портфель из 1 пая, купленного в разные периоды) --------
-else:
-    date_from_long = "2018-01-01T00:00:00Z"
-    df_long = load_df(ZPIF_SECIDS, date_from_long, date_to)
-    df_long = df_long[df_long["isin"].isin(TARGET_ISINS)].copy()
 
     # применяем те же выбранные фонды
     selected_funds = st.session_state[SELECT_KEY]
