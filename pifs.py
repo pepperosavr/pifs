@@ -289,21 +289,33 @@ section = st.segmented_control(
 )
 
 # Период загрузки
+
 utc_now = datetime.now(timezone.utc)
 date_to = utc_now.strftime("%Y-%m-%dT23:59:59Z")
 
-df = pd.DataFrame()  # заглушка
-
-if section != "Доходность":
+if section == "Доходность":
+    date_from = "2018-01-01T00:00:00Z"
+    try:
+        df = load_df_long_history(
+            ZPIF_SECIDS,
+            date_from,
+            date_to,
+            chunk_size=30,   # при необходимости уменьшить до 20/10
+            step_months=6    # при необходимости уменьшить до 3
+        )
+    except Exception as e:
+        st.error(f"Ошибка загрузки длиннои истории: {e}")
+        st.stop()
+else:
     date_from = "2025-01-01T00:00:00Z"
     df = load_df(ZPIF_SECIDS, date_from, date_to)
 
-    # На всякии случаи: оставляем только целевые ISIN
-    df = df[df["isin"].isin(TARGET_ISINS)].copy()
+# На всякии случаи: оставляем только целевые ISIN
+df = df[df["isin"].isin(TARGET_ISINS)].copy()
 
-    if df.empty:
-        st.warning("Данных не найдено за выбранныи период.")
-        st.stop()
+if df.empty:
+    st.warning("Данных не найдено за выбранныи период.")
+    st.stop()
 
 # Снапшот
 out_dir = Path("snapshots")
@@ -465,27 +477,9 @@ if section == "Доходность":
     st.subheader("Доходность (накопленная, %): 1 пай, купленный в разные периоды")
     st.caption("Считается по цене (close): без учета возможных выплат/распределений.")
 
-    # 1) Грузим длинную историю только в этом разделе
+     # df уже загружен выше в виде длиннои истории (с 2018)
     date_from_long = "2018-01-01T00:00:00Z"
-    try:
-        df_long = load_df_long_history(
-            ZPIF_SECIDS,
-            date_from_long,
-            date_to,
-            chunk_size=30,   # если снова упадет: поставьте 20 или 10
-            step_months=6    # если снова упадет: поставьте 3
-        )
-    except Exception as e:
-        st.error(f"Ошибка загрузки длинной истории: {e}")
-        st.stop()
-
-    df_long = df_long[df_long["isin"].isin(TARGET_ISINS)].copy()
-    
-  
-
-    if df_long.empty:
-        st.warning("Не удалось загрузить длинную историю для доходности.")
-        st.stop()
+    df_long = df.copy()
 
     # 2) Те же названия и label
     df_long["fund"] = df_long["isin"].map(FUND_MAP).fillna(df_long["shortname"].astype(str))
