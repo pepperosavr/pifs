@@ -817,6 +817,7 @@ if mode == "Режим истории":
                 )
 
                 display = out.copy()
+                display = display.drop(columns=["label"], errors="ignore")
                 display[f"Дневная волатильность, %"] = display[
                     f"Дневная волатильность, %"
                 ].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}%")
