@@ -983,23 +983,53 @@ if mode == "Режим истории":
             engine, market, board = resolve_board(secid)
             url = f"{ISS_BASE}/engines/{engine}/markets/{market}/boards/{board}/securities/{secid}/candles.json"
 
-            j = _iss_get(url, params={
-                "from": d_from.isoformat(),
-                "till": d_to.isoformat(),
-                "interval": 24,        # дневные свечи
-                "iss.meta": "off",
-            })
+            frames = []
+            start = 0
 
-            candles = pd.DataFrame(j["candles"]["data"], columns=j["candles"]["columns"])
+            while True:
+                j = _iss_get(url, params={
+                    "from": d_from.isoformat(),
+                    "till": d_to.isoformat(),
+                    "interval": 24,         # дневные свечи
+                    "start": start,         # пагинация
+                    "iss.meta": "off",
+                })
+
+                candles_block = j.get("candles", {})
+                data = candles_block.get("data", [])
+                cols = candles_block.get("columns", [])
+
+                if not data or not cols:
+                    break
+
+                part = pd.DataFrame(data, columns=cols)
+                if part.empty:
+                    break
+
+                frames.append(part)
+                got = len(part)
+                if got < 100:
+                    break
+
+                start += got
+
+            if not frames:
+                return pd.DataFrame(columns=["secid", "tradedate", "close"])
+
+            candles = pd.concat(frames, ignore_index=True)
+
     # типичные поля: begin, open, close, high, low, value, volume
-            if candles.empty or "close" not in candles.columns:
+            if "begin" not in candles.columns or "close" not in candles.columns:
                 return pd.DataFrame(columns=["secid", "tradedate", "close"])
 
             candles["tradedate"] = pd.to_datetime(candles["begin"], errors="coerce").dt.date
             candles["close"] = pd.to_numeric(candles["close"], errors="coerce")
+
             out = candles[["tradedate", "close"]].dropna().copy()
             out["secid"] = secid
             return out
+           
+        st.subheader("Индексы Московской биржи за выбранный период")
 
         st.subheader("Индексы Московской биржи за выбранный период")
 
@@ -1012,7 +1042,6 @@ if mode == "Режим истории":
             format_func=lambda x: f"{x} — {INDEX_MAP.get(x, x)}",
         )
 
-    # --- выбор индексов ---
         if not idx_selected:
             st.info("Выберите хотя бы один индекс.")
             st.stop()
@@ -1021,22 +1050,23 @@ if mode == "Режим истории":
         errors = {}
         idx_frames = []
 
-# диапазон, чтобы потом внутри него выбирать окно независимо
         idx_to_full = date.today()
         idx_from_full = idx_to_full - timedelta(days=365 * 5)  # 5 лет
 
         for secid in idx_selected:
             try:
                 tmp = load_index_candles(secid, idx_from_full, idx_to_full)
-                if not tmp.empty:
+                if tmp.empty:
+                    errors[secid] = "пустои ответ candles за выбранный диапазон"
+                else:
                     idx_frames.append(tmp)
             except Exception as e:
                 errors[secid] = str(e)
 
         if errors:
             st.warning(
-                "Не удалось загрузить часть индексов:\n"
-                + "\n".join([f"{k}: {v}" for k, v in errors.items()])
+                "Не удалось загрузить часть индексов:\n" +
+                "\n".join([f"{k}: {v}" for k, v in errors.items()])
             )
 
         if not idx_frames:
@@ -1044,17 +1074,13 @@ if mode == "Режим истории":
             st.stop()
 
         idx_df = pd.concat(idx_frames, ignore_index=True)
+        idx_df = idx_df.dropna(subset=["tradedate", "close"]).copy()
 
-# важно: добавляем label, иначе ниже groupby по label упадет
-        idx_df["label"] = idx_df["secid"].map(INDEX_MAP).fillna(idx_df["secid"].astype(str))
-        idx_df = idx_df.dropna(subset=["tradedate", "close", "secid"]).copy()
+# метка для легенды/цветов
+        idx_df["label"] = idx_df["secid"].map(lambda s: f"{s} — {INDEX_MAP.get(s, s)}")
 
-# --- фильтр выбранных индексов (на всякий случай) ---
-        idx_sel_df = idx_df[idx_df["secid"].isin(idx_selected)].copy()
-        idx_sel_df = idx_sel_df.dropna(subset=["tradedate", "close"]).copy()
-
-# --- даты по выбранным индексам ---
-        idx_dates = sorted(idx_sel_df["tradedate"].unique().tolist())
+# Даты по выбранным индексам
+        idx_dates = sorted(idx_df["tradedate"].unique().tolist())
         if len(idx_dates) < 2:
             st.warning("Недостаточно дат по выбранным индексам, чтобы построить период.")
             st.stop()
@@ -1069,7 +1095,7 @@ if mode == "Режим истории":
 
         idx_max_window = min(252, len(idx_dates))
         idx_window = st.slider(
-            "Длина периода (торговые дни) — индексы",
+            "Длина периода (торговые дни) (индексы)",
             min_value=2,
             max_value=idx_max_window,
             value=min(30, idx_max_window),
@@ -1082,22 +1108,21 @@ if mode == "Режим истории":
         idx_start_i = max(0, idx_end_i - idx_window + 1)
         idx_start_date = idx_dates[idx_start_i]
 
-        st.caption(f"Период: {idx_start_date} — {idx_end_date} (торговых дней: {idx_window})")
+        st.caption(f"Период (индексы): {idx_start_date} — {idx_end_date} (торговых дней: {idx_window})")
 
-# --- срез по окну индексов ---
-        idx_period = idx_sel_df[
-            (idx_sel_df["tradedate"] >= idx_start_date) &
-            (idx_sel_df["tradedate"] <= idx_end_date)
+# фильтр по окну индексов
+        idx_period = idx_df[
+            (idx_df["tradedate"] >= idx_start_date) &
+            (idx_df["tradedate"] <= idx_end_date)
         ].copy()
 
-# если вдруг есть дубли по дате — схлопнем
+# схлопывание дублеи по дате (если есть)
         idx_period = (
             idx_period.sort_values(["secid", "tradedate"])
                       .groupby(["secid", "label", "tradedate"], as_index=False)
                       .agg(close=("close", "last"))
         )
 
-# --- график значений индексов ---
         fig_idx = px.line(
             idx_period,
             x="tradedate",
