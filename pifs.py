@@ -914,6 +914,7 @@ if mode == "Режим истории":
                     out2 = out2.sort_values(col_name, ascending=False, na_position="last")
 
                     display2 = out2.copy()
+                    display2 = display2.drop(columns=["label"], errors="ignore")
                     display2[col_name] = display2[col_name].map(
                         lambda x: "—" if pd.isna(x) else f"{x:.2f}%"
                     )
