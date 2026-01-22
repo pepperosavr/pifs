@@ -614,12 +614,12 @@ if section == "Доходность":
         plot_return_tab(ret_all, "Горизонт: все время")
 
     with tab_1y:
-        pb = filter_full_horizon(price_base, start_1y) if strict_horizon else price_base
+        pb = filter_full_horizon(price_base, start_1y) if st.session_state.get("ret_strict", True) else price_base
         ret_1y = build_cum_return(pb, start_date=start_1y, end_date_=end_date_ret)
         plot_return_tab(ret_1y, "Горизонт: 1 год")
 
     with tab_3y:
-        pb = filter_full_horizon(price_base, start_3y) if strict_horizon else price_base
+        pb = filter_full_horizon(price_base, start_3y) if st.session_state.get("ret_strict", True) else price_base
         ret_3y = build_cum_return(pb, start_date=start_3y, end_date_=end_date_ret)
         plot_return_tab(ret_3y, "Горизонт: 3 года")
 
