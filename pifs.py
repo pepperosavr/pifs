@@ -196,14 +196,6 @@ section = st.segmented_control(
     default="Основные графики",
 )
 
-
-# 2) КНОПКА: История/Сравнение 
-mode = st.radio(
-    "Режим просмотра",
-    options=["Режим истории", "Режим сравнения (сегодня vs предыдущий торговый день)"],
-    horizontal=True,
-)
-
 # Период загрузки
 utc_now = datetime.now(timezone.utc)
 date_from = "2025-01-01T00:00:00Z"
@@ -370,6 +362,180 @@ if df_sel.empty:
 
 # Единая метка для графиков/таблиц
 df_sel["label"] = df_sel["fund"].astype(str) + " (" + df_sel["isin"].astype(str) + ")"
+
+# =========================================================
+# РАЗДЕЛ: ДОХОДНОСТЬ (глубокая история с 2018 года)
+# =========================================================
+if section == "Доходность":
+    st.subheader("Доходность (накопленная, %): 1 пай, купленный в разные периоды")
+    st.caption("Считается по цене (close): без учета возможных выплат/распределений.")
+
+    # 1) Грузим длинную историю только в этом разделе
+    date_from_long = "2018-01-01T00:00:00Z"
+    df_long = load_df(ZPIF_SECIDS, date_from_long, date_to)
+    df_long = df_long[df_long["isin"].isin(TARGET_ISINS)].copy()
+
+    if df_long.empty:
+        st.warning("Не удалось загрузить длинную историю для доходности.")
+        st.stop()
+
+    # 2) Те же названия и label
+    df_long["fund"] = df_long["isin"].map(FUND_MAP).fillna(df_long["shortname"].astype(str))
+    df_long["label"] = df_long["fund"].astype(str) + " (" + df_long["isin"].astype(str) + ")"
+
+    # 3) Применяем выбранные фонды
+    selected_funds = st.session_state[SELECT_KEY]
+    df_long_sel = df_long[df_long["fund"].isin(selected_funds)].copy().sort_values(["tradedate", "fund"])
+
+    if df_long_sel.empty:
+        st.warning("По выбранным фондам нет данных в длинной истории (с 2018).")
+        st.stop()
+
+    # 4) Выбор конечной даты (отдельно для доходности)
+    available_dates_long = sorted(df_long_sel["tradedate"].dropna().unique().tolist())
+    if not available_dates_long:
+        st.warning("Нет дат для расчета доходности.")
+        st.stop()
+
+    end_date_ret: date = st.select_slider(
+        "Конечная дата (доходность)",
+        options=available_dates_long,
+        value=available_dates_long[-1],
+        key="ret_end_date",
+    )
+
+    strict_horizon = st.checkbox(
+        "Показывать 1 год / 3 года только для фондов с полной историеи на дату старта горизонта",
+        value=True,
+        key="ret_strict",
+    )
+
+    # 5) База цен: одна close на фонд/дату (схлопываем повторы)
+    price_base = df_long_sel.dropna(subset=["close"]).copy()
+    price_base = (
+        price_base[price_base["tradedate"] <= end_date_ret]
+        .sort_values(["label", "tradedate"])
+        .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+        .agg(close=("close", "last"))
+    )
+
+    if price_base.empty:
+        st.info("Недостаточно данных close для расчета доходности.")
+        st.stop()
+
+    def filter_full_horizon(prices: pd.DataFrame, start_date: date) -> pd.DataFrame:
+        """Оставляет только фонды, у которых первая доступная дата <= start_date."""
+        first_dates = prices.groupby("label")["tradedate"].min()
+        ok_labels = first_dates[first_dates <= start_date].index
+        return prices[prices["label"].isin(ok_labels)].copy()
+
+    def build_cum_return(prices: pd.DataFrame, start_date: date | None, end_date_: date) -> pd.DataFrame:
+        """
+        tradedate, label, fund, isin, close, base_date_str, base_close, ret_pct
+        """
+        d = prices.copy()
+        d = d[d["tradedate"] <= end_date_]
+        if start_date is not None:
+            d = d[d["tradedate"] >= start_date]
+
+        if d.empty:
+            return d
+
+        d = d.sort_values(["label", "tradedate"]).copy()
+
+        # базовая дата и базовая цена = первая точка внутри горизонта
+        d["base_close"] = d.groupby("label")["close"].transform("first")
+        d["base_date"] = d.groupby("label")["tradedate"].transform("first")
+        d["base_date_str"] = d["base_date"].astype(str)
+
+        d["ret_pct"] = (d["close"] / d["base_close"] - 1.0) * 100.0
+        return d
+
+    # 6) Горизонты: "все время", "1 год", "3 года" от end_date_ret
+    end_ts = pd.to_datetime(end_date_ret)
+    start_1y = (end_ts - pd.DateOffset(years=1)).date()
+    start_3y = (end_ts - pd.DateOffset(years=3)).date()
+
+    tab_all, tab_1y, tab_3y = st.tabs(["За все время", "За 1 год", "За 3 года"])
+
+    def plot_return_tab(ret_df: pd.DataFrame, title_suffix: str):
+        if ret_df.empty:
+            st.info("Недостаточно данных для построения доходности по выбранному горизонту.")
+            return
+
+        fig_ret = px.line(
+            ret_df,
+            x="tradedate",
+            y="ret_pct",
+            color="label",
+            markers=True,
+            custom_data=["fund", "isin", "close", "base_date_str", "base_close"],
+            labels={"ret_pct": "Доходность, %", "tradedate": "Дата"},
+            title=None,
+        )
+        fig_ret.update_layout(separators=". ")
+        fig_ret.update_traces(
+            hovertemplate=(
+                "Дата: %{x|%Y-%m-%d}<br>"
+                "Фонд: %{customdata[0]}<br>"
+                "Цена закрытия: %{customdata[2]:,.2f}<br>"
+                "Базовая дата: %{customdata[3]} (close=%{customdata[4]:,.2f})<br>"
+                "Накопленная доходность: %{y:+.2f}%<br>"
+                f"<extra>{title_suffix}</extra>"
+            )
+        )
+        st.plotly_chart(fig_ret, use_container_width=True)
+
+        # Итоговая доходность на end_date_ret
+        last_points = (
+            ret_df.sort_values(["label", "tradedate"])
+                  .groupby(["label", "fund", "isin"], as_index=False)
+                  .tail(1)
+        )
+        out = last_points[["fund", "isin", "base_date_str", "base_close", "close", "ret_pct"]].copy()
+        out = out.rename(columns={
+            "fund": "Фонд",
+            "base_date_str": "Дата покупки 1 пая",
+            "base_close": "Цена на базовую дату, руб",
+            "close": "Цена на конечную дату, руб",
+            "ret_pct": "Доходность, %",
+        }).sort_values("Доходность, %", ascending=False, na_position="last")
+
+        disp = out.copy()
+        disp["Цена на базовую дату, руб"] = disp["Цена на базовую дату, руб"].map(
+            lambda x: "—" if pd.isna(x) else f"{x:,.2f}".replace(",", " ")
+        )
+        disp["Цена на конечную дату, руб"] = disp["Цена на конечную дату, руб"].map(
+            lambda x: "—" if pd.isna(x) else f"{x:,.2f}".replace(",", " ")
+        )
+        disp["Доходность, %"] = disp["Доходность, %"].map(
+            lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
+        )
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+
+    with tab_all:
+        ret_all = build_cum_return(price_base, start_date=None, end_date_=end_date_ret)
+        plot_return_tab(ret_all, "Горизонт: все время")
+
+    with tab_1y:
+        pb = filter_full_horizon(price_base, start_1y) if strict_horizon else price_base
+        ret_1y = build_cum_return(pb, start_date=start_1y, end_date_=end_date_ret)
+        plot_return_tab(ret_1y, "Горизонт: 1 год")
+
+    with tab_3y:
+        pb = filter_full_horizon(price_base, start_3y) if strict_horizon else price_base
+        ret_3y = build_cum_return(pb, start_date=start_3y, end_date_=end_date_ret)
+        plot_return_tab(ret_3y, "Горизонт: 3 года")
+
+    st.caption(f"История для доходности: {date_from_long} — {date_to} (UTC). Кеш 24 часа.")
+    st.stop()
+
+# 2) КНОПКА: История/Сравнение (только для "Основных графиков")
+mode = st.radio(
+    "Режим просмотра",
+    options=["Режим истории", "Режим сравнения (сегодня vs предыдущий торговый день)"],
+    horizontal=True,
+)
 
 # ---------- РЕЖИМ 1: ИСТОРИЯ ----------
 if mode == "Режим истории":
