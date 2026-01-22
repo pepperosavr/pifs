@@ -506,12 +506,6 @@ if section == "Доходность":
         key="ret_end_date",
     )
 
-    strict_horizon = st.checkbox(
-        "Показывать 1 год / 3 года только для фондов с полной историеи на дату старта горизонта",
-        value=True,
-        key="ret_strict",
-    )
-
     # 5) База цен: одна close на фонд/дату (схлопываем повторы)
     price_base = df_long_sel.dropna(subset=["close"]).copy()
     price_base = (
