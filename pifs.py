@@ -114,7 +114,7 @@ def fetch_all_trading_results(token: str, instruments: list[str], date_from: str
         body = {
             "engine": "stock",
             "market": "shares",
-            "boardid": ["TQIF", "LIQR"],
+            "boardid": ["TQIF"],
             "instruments": instruments,
             "dateFrom": date_from,
             "dateTo": date_to,
