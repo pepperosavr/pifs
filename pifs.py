@@ -142,15 +142,39 @@ def fetch_all_trading_results(token: str, instruments: list[str], date_from: str
 # -----------------------
 # Загрузка данных (кеширование)
 # -----------------------
+
+def split_timerange(date_from: str, date_to: str, step_months: int = 6):
+    start = pd.to_datetime(date_from, utc=True)
+    end = pd.to_datetime(date_to, utc=True)
+
+    cur = start
+    while cur < end:
+        nxt = cur + pd.DateOffset(months=step_months)
+        if nxt > end:
+            nxt = end
+        yield (
+            cur.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            nxt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        cur = nxt + pd.Timedelta(seconds=1)
+
+
 @st.cache_data(ttl=24 * 60 * 60)
-def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
+def load_df_long_history(
+    secids: list[str],
+    date_from: str,
+    date_to: str,
+    chunk_size: int = 30,
+    step_months: int = 6,
+) -> pd.DataFrame:
     token = get_token(API_LOGIN, API_PASS)
     if not token:
         raise RuntimeError("Ошибка авторизации: не удалось получить токен")
 
     all_results = []
-    for chunk in chunk_list(secids, 100):
-        all_results.extend(fetch_all_trading_results(token, chunk, date_from, date_to))
+    for d_from, d_to in split_timerange(date_from, date_to, step_months=step_months):
+        for chunk in chunk_list(secids, 100):
+            all_results.extend(fetch_all_trading_results(token, chunk, date_from, date_to))
 
     if not all_results:
         return pd.DataFrame(columns=["shortname", "fund", "isin", "volume", "value", "numtrades", "close", "tradedate"])
@@ -372,8 +396,21 @@ if section == "Доходность":
 
     # 1) Грузим длинную историю только в этом разделе
     date_from_long = "2018-01-01T00:00:00Z"
-    df_long = load_df(ZPIF_SECIDS, date_from_long, date_to)
+    try:
+        df_long = load_df_long_history(
+            ZPIF_SECIDS,
+            date_from_long,
+            date_to,
+            chunk_size=30,   # если снова упадет: поставьте 20 или 10
+            step_months=6    # если снова упадет: поставьте 3
+        )
+    except Exception as e:
+        st.error(f"Ошибка загрузки длинной истории: {e}")
+        st.stop()
+
     df_long = df_long[df_long["isin"].isin(TARGET_ISINS)].copy()
+    
+  
 
     if df_long.empty:
         st.warning("Не удалось загрузить длинную историю для доходности.")
