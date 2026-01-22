@@ -949,13 +949,13 @@ if mode == "Режим истории":
         from datetime import timedelta
 
         INDEX_MAP = {
-            "RGBI": "RGBI",
-            "RGBITR": "RGBITR",
-            "RUCBCPNS": "RUCBCPNS",
-            "RUCBTRNS": "RUCBTRNS",
-            "RUSFAR": "RUSFAR",
-            "CREI": "CREI",
-            "MREF": "MREF",
+            "RGBI",
+            "RGBITR",
+            "RUCBCPNS",
+            "RUCBTRNS",
+            "RUSFAR",
+            "CREI",
+            "MREF",
         }
 
         def _iss_get(url: str, params: dict | None = None) -> dict:
@@ -1028,8 +1028,6 @@ if mode == "Режим истории":
             out = candles[["tradedate", "close"]].dropna().copy()
             out["secid"] = secid
             return out
-           
-        st.subheader("Индексы Московской биржи за выбранный период")
 
         st.subheader("Индексы Московской биржи за выбранный период")
 
