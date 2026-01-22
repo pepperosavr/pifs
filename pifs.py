@@ -1254,7 +1254,6 @@ if mode == "Режим истории":
             "RUSFAR": "RUSFAR",
             "CREI": "CREI",
             "MREF": "MREF",
-            "MREDC": "MREDC",
         }
 
         def _iss_get(url: str, params: dict | None = None) -> dict:
@@ -1334,7 +1333,7 @@ if mode == "Режим истории":
         idx_selected = st.multiselect(
             "Выберите индексы",
             options=list(INDEX_MAP.keys()),
-            default=["RGBI", "RGBITR", "RUCBCPNS", "RUCBTRNS", "RUSFAR", "CREI", "MREF", "MREDC"],
+            default=["RGBI", "RGBITR", "RUCBCPNS", "RUCBTRNS", "RUSFAR", "CREI", "MREF"],
             key=IDX_KEY,
         )
 
