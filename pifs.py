@@ -139,6 +139,17 @@ def fetch_all_trading_results(token: str, instruments: list[str], date_from: str
 
     return all_data
 
+def _to_num_series(s: pd.Series) -> pd.Series:
+    # Нормализуем типичные форматы чисел: пробелы/неразрывные пробелы, запятая как десятичный разделитель
+    if s is None:
+        return pd.Series(dtype="float64")
+    s = s.astype(str)
+    s = s.str.replace("\xa0", "", regex=False)  # NBSP
+    s = s.str.replace(" ", "", regex=False)
+    s = s.str.replace(",", ".", regex=False)
+    s = s.replace(["", "nan", "None"], np.nan)
+    return pd.to_numeric(s, errors="coerce")
+
 # -----------------------
 # Загрузка данных (кеширование)
 # -----------------------
@@ -175,12 +186,12 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
 # 2) если в isin лежит MOEX-код (XACCSK/XTRIUMF/...), переводим в ISIN
     df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
 
-    df["volume"]    = _to_num_series(df["volume"], errors="coerce")
-    df["value"]     = _to_num_series(df["value"], errors="coerce")        # денежныи оборот
-    df["numtrades"] = _to_num_series(df["numtrades"], errors="coerce")    # число сделок
-    df["close"]     = _to_num_series(df["close"], errors="coerce")
-    df["waprice"] = _to_num_series(df["waprice"], errors="coerce")
-    df["open"] = _to_num_series(df["open"], errors="coerce")
+    df["volume"]    = _to_num_series(df["volume"])
+    df["value"]     = _to_num_series(df["value"])
+    df["numtrades"] = _to_num_series(df["numtrades"])
+    df["close"]     = _to_num_series(df["close"])
+    df["waprice"]   = _to_num_series(df["waprice"])
+    df["open"]      = _to_num_series(df["open"])
 
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
@@ -267,12 +278,12 @@ def load_df_long_history(
     df["isin"] = df["isin"].fillna(df["secid"])
     df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
 
-    df["volume"]    = _to_num_series(df["volume"], errors="coerce")
-    df["value"]     = _to_num_series(df["value"], errors="coerce")
-    df["numtrades"] = _to_num_series(df["numtrades"], errors="coerce")
-    df["close"]     = _to_num_series(df["close"], errors="coerce")
-    df["waprice"]   = _to_num_series(df["waprice"], errors="coerce")
-    df["open"]      = _to_num_series(df["open"], errors="coerce")
+    df["volume"]    = _to_num_series(df["volume"])
+    df["value"]     = _to_num_series(df["value"])
+    df["numtrades"] = _to_num_series(df["numtrades"])
+    df["close"]     = _to_num_series(df["close"])
+    df["waprice"]   = _to_num_series(df["waprice"])
+    df["open"]      = _to_num_series(df["open"])
 
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
@@ -331,16 +342,7 @@ if df.empty:
     st.warning("Данных не найдено за выбранныи период.")
     st.stop()
 
-def _to_num_series(s: pd.Series) -> pd.Series:
-    # Нормализуем типичные форматы чисел: пробелы/неразрывные пробелы, запятая как десятичный разделитель
-    if s is None:
-        return pd.Series(dtype="float64")
-    s = s.astype(str)
-    s = s.str.replace("\xa0", "", regex=False)  # NBSP
-    s = s.str.replace(" ", "", regex=False)
-    s = s.str.replace(",", ".", regex=False)
-    s = s.replace(["", "nan", "None"], np.nan)
-    return pd.to_numeric(s, errors="coerce")
+
 
 # Выбор фондов
 
