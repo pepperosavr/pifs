@@ -139,17 +139,6 @@ def fetch_all_trading_results(token: str, instruments: list[str], date_from: str
 
     return all_data
 
-def _to_num_series(s: pd.Series) -> pd.Series:
-    # Нормализуем типичные форматы чисел: пробелы/неразрывные пробелы, запятая как десятичный разделитель
-    if s is None:
-        return pd.Series(dtype="float64")
-    s = s.astype(str)
-    s = s.str.replace("\xa0", "", regex=False)  # NBSP
-    s = s.str.replace(" ", "", regex=False)
-    s = s.str.replace(",", ".", regex=False)
-    s = s.replace(["", "nan", "None"], np.nan)
-    return pd.to_numeric(s, errors="coerce")
-
 # -----------------------
 # Загрузка данных (кеширование)
 # -----------------------
@@ -161,7 +150,7 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
         raise RuntimeError("Ошибка авторизации: не удалось получить токен")
 
     all_results = []
-    for chunk in chunk_list(secids, 30):
+    for chunk in chunk_list(secids, 100):
         all_results.extend(fetch_all_trading_results(token, chunk, date_from, date_to))
 
     if not all_results:
@@ -176,22 +165,18 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
 
     df = raw[need_cols].copy()
 
-    # Нормализуем пустые значения
-    df["isin"] = df["isin"].replace(["", "nan", "None"], np.nan)
-    df["secid"] = df["secid"].replace(["", "nan", "None"], np.nan)
+    # Восстанавливаем isin по secid, если isin не пришел
+    df["isin"] = df["isin"].fillna(df["secid"].map(MOEX_CODE_TO_ISIN))
 
-# 1) если isin пустои, берем secid (часто secid уже является ISIN)
-    df["isin"] = df["isin"].fillna(df["secid"])
-
-# 2) если в isin лежит MOEX-код (XACCSK/XTRIUMF/...), переводим в ISIN
+# На случаи, когда API положил secid в поле isin
     df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
 
-    df["volume"]    = _to_num_series(df["volume"])
-    df["value"]     = _to_num_series(df["value"])
-    df["numtrades"] = _to_num_series(df["numtrades"])
-    df["close"]     = _to_num_series(df["close"])
-    df["waprice"]   = _to_num_series(df["waprice"])
-    df["open"]      = _to_num_series(df["open"])
+    df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
+    df["value"]     = pd.to_numeric(df["value"], errors="coerce")        # денежныи оборот
+    df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")    # число сделок
+    df["close"]     = pd.to_numeric(df["close"], errors="coerce")
+    df["waprice"] = pd.to_numeric(df["waprice"], errors="coerce")
+    df["open"] = pd.to_numeric(df["open"], errors="coerce")
 
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
@@ -272,18 +257,17 @@ def load_df_long_history(
 
     df = raw[need_cols].copy()
 
-    df["isin"] = df["isin"].replace(["", "nan", "None"], np.nan)
-    df["secid"] = df["secid"].replace(["", "nan", "None"], np.nan)
-
-    df["isin"] = df["isin"].fillna(df["secid"])
+    # Восстанавливаем isin по secid, если isin не пришел
+    df["isin"] = df["isin"].fillna(df["secid"].map(MOEX_CODE_TO_ISIN))
+    # На случаи, когда API положил secid в поле isin
     df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
 
-    df["volume"]    = _to_num_series(df["volume"])
-    df["value"]     = _to_num_series(df["value"])
-    df["numtrades"] = _to_num_series(df["numtrades"])
-    df["close"]     = _to_num_series(df["close"])
-    df["waprice"]   = _to_num_series(df["waprice"])
-    df["open"]      = _to_num_series(df["open"])
+    df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
+    df["value"]     = pd.to_numeric(df["value"], errors="coerce")
+    df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")
+    df["close"]     = pd.to_numeric(df["close"], errors="coerce")
+    df["waprice"]   = pd.to_numeric(df["waprice"], errors="coerce")
+    df["open"]      = pd.to_numeric(df["open"], errors="coerce")
 
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
@@ -298,20 +282,11 @@ def load_df_long_history(
 # -----------------------
 st.title("Торги ЗПИФ")
 
-    # Выбор раздела: segmented_control есть не во всех версиях Streamlit
-if hasattr(st, "segmented_control"):
-    section = st.segmented_control(
-        "Раздел",
-        options=["Основные графики", "Доходность"],
-        default="Основные графики",
-    )
-else:
-    section = st.radio(
-        "Раздел",
-        options=["Основные графики", "Доходность"],
-        index=0,
-        horizontal=True,
-    )
+section = st.segmented_control(
+    "Раздел",
+    options=["Основные графики", "Доходность"],
+    default="Основные графики",
+)
 
 # Период загрузки
 
@@ -342,7 +317,13 @@ if df.empty:
     st.warning("Данных не найдено за выбранныи период.")
     st.stop()
 
-
+# Снапшот
+out_dir = Path("snapshots")
+out_dir.mkdir(parents=True, exist_ok=True)
+snap_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+out_path = out_dir / f"zpif_history_{snap_date}.csv"
+df.to_csv(out_path, index=False, encoding="utf-8")
+print(f"Saved snapshot to: {out_path.resolve()}")
 
 # Выбор фондов
 
@@ -710,19 +691,19 @@ if mode == "Режим истории":
         x="tradedate",
         y="close_change_pct",
         color="label",
+        hover_data=["fund", "isin", "close", "volume", "value"],
         markers=True,
-        custom_data=["fund", "isin", "close", "volume", "value"],
         labels={"close_change_pct": "Изменение цены закрытия, %", "tradedate": "Дата"},
-    )
+)
 
+# Показываем изменение цены как процент в hover
     fig_close_pct.update_yaxes(hoverformat=".2f")
     fig_close_pct.update_layout(separators=". ")
-
+    
     fig_close_pct.update_traces(
         hovertemplate=(
             "Дата: %{x|%Y-%m-%d}<br>"
             "Фонд: %{customdata[0]}<br>"
-            "ISIN: %{customdata[1]}<br>"
             "Цена закрытия: %{customdata[2]:,.2f}<br>"
             "Изменение цены закрытия: %{y:.2f}%<br>"
             "Объем бумаг: %{customdata[3]:,.0f}<br>"
@@ -730,7 +711,6 @@ if mode == "Режим истории":
             "<extra>%{fullData.name}</extra>"
         )
     )
-
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
     # -------- 7a2) Волатильность цены (по close) --------
@@ -1558,10 +1538,4 @@ else:
 
     st.dataframe(display, use_container_width=True, hide_index=True)
 
-with st.sidebar:
-    if st.button("Сбросить кеш"):
-        st.cache_data.clear()
-        st.rerun()
-
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
-
