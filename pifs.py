@@ -165,10 +165,14 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
 
     df = raw[need_cols].copy()
 
-    # Восстанавливаем isin по secid, если isin не пришел
-    df["isin"] = df["isin"].fillna(df["secid"].map(MOEX_CODE_TO_ISIN))
+    # Нормализуем пустые значения
+    df["isin"] = df["isin"].replace(["", "nan", "None"], np.nan)
+    df["secid"] = df["secid"].replace(["", "nan", "None"], np.nan)
 
-# На случаи, когда API положил secid в поле isin
+# 1) если isin пустои, берем secid (часто secid уже является ISIN)
+    df["isin"] = df["isin"].fillna(df["secid"])
+
+# 2) если в isin лежит MOEX-код (XACCSK/XTRIUMF/...), переводим в ISIN
     df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
 
     df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
@@ -257,9 +261,10 @@ def load_df_long_history(
 
     df = raw[need_cols].copy()
 
-    # Восстанавливаем isin по secid, если isin не пришел
-    df["isin"] = df["isin"].fillna(df["secid"].map(MOEX_CODE_TO_ISIN))
-    # На случаи, когда API положил secid в поле isin
+    df["isin"] = df["isin"].replace(["", "nan", "None"], np.nan)
+    df["secid"] = df["secid"].replace(["", "nan", "None"], np.nan)
+
+    df["isin"] = df["isin"].fillna(df["secid"])
     df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
 
     df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
@@ -700,19 +705,19 @@ if mode == "Режим истории":
         x="tradedate",
         y="close_change_pct",
         color="label",
-        hover_data=["fund", "isin", "close", "volume", "value"],
         markers=True,
+        custom_data=["fund", "isin", "close", "volume", "value"],
         labels={"close_change_pct": "Изменение цены закрытия, %", "tradedate": "Дата"},
-)
+    )
 
-# Показываем изменение цены как процент в hover
     fig_close_pct.update_yaxes(hoverformat=".2f")
     fig_close_pct.update_layout(separators=". ")
-    
+
     fig_close_pct.update_traces(
         hovertemplate=(
             "Дата: %{x|%Y-%m-%d}<br>"
             "Фонд: %{customdata[0]}<br>"
+            "ISIN: %{customdata[1]}<br>"
             "Цена закрытия: %{customdata[2]:,.2f}<br>"
             "Изменение цены закрытия: %{y:.2f}%<br>"
             "Объем бумаг: %{customdata[3]:,.0f}<br>"
@@ -720,6 +725,7 @@ if mode == "Режим истории":
             "<extra>%{fullData.name}</extra>"
         )
     )
+
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
     # -------- 7a2) Волатильность цены (по close) --------
