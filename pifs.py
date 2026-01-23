@@ -1558,5 +1558,10 @@ else:
 
     st.dataframe(display, use_container_width=True, hide_index=True)
 
+with st.sidebar:
+    if st.button("Сбросить кеш"):
+        st.cache_data.clear()
+        st.rerun()
+
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
 
