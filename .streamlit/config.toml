@@ -1,7 +1,6 @@
 text
 [browser]
 gatherUsageStats = false
- 
 [server]
 enableXsrfProtection = false
 enableCORS = false
