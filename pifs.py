@@ -142,7 +142,6 @@ def fetch_all_trading_results(token: str, instruments: list[str], date_from: str
 # -----------------------
 # Загрузка данных (кеширование)
 # -----------------------
-
 @st.cache_data(ttl=24 * 60 * 60)
 def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     token = get_token(API_LOGIN, API_PASS)
@@ -156,123 +155,21 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     if not all_results:
         return pd.DataFrame(columns=["shortname", "fund", "isin", "volume", "value", "numtrades", "close", "tradedate"])
 
-    raw = pd.DataFrame(all_results)
+    df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "waprice", "tradedate"]]
 
-    need_cols = ["shortname", "secid", "isin", "volume", "value", "numtrades", "open", "close", "waprice", "tradedate"]
-    for c in need_cols:
-        if c not in raw.columns:
-            raw[c] = np.nan
 
-    df = raw[need_cols].copy()
-
-    # Восстанавливаем isin по secid, если isin не пришел
-    df["isin"] = df["isin"].fillna(df["secid"].map(MOEX_CODE_TO_ISIN))
-
-# На случаи, когда API положил secid в поле isin
-    df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
+    df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "waprice", "tradedate"]]
 
     df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
     df["value"]     = pd.to_numeric(df["value"], errors="coerce")        # денежныи оборот
     df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")    # число сделок
     df["close"]     = pd.to_numeric(df["close"], errors="coerce")
     df["waprice"] = pd.to_numeric(df["waprice"], errors="coerce")
-    df["open"] = pd.to_numeric(df["open"], errors="coerce")
 
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
 
     # имя фонда 
-    df["fund"] = df["isin"].map(FUND_MAP).fillna(df["shortname"].astype(str))
-
-    return df
-
-from dateutil.relativedelta import relativedelta  # pip install python-dateutil
-
-def _to_date(d: str) -> date:
-    # "2018-01-01T00:00:00Z" -> date(2018,1,1)
-    return pd.to_datetime(d, utc=True).date()
-
-def _to_api_dt(d: date, end_of_day: bool = False) -> str:
-    if end_of_day:
-        return f"{d:%Y-%m-%d}T23:59:59Z"
-    return f"{d:%Y-%m-%d}T00:00:00Z"
-
-def _iter_month_ranges(date_from: str, date_to: str, step_months: int):
-    """
-    Генерирует полуинтервалы [start, end] в формате API.
-    """
-    start = _to_date(date_from)
-    end = _to_date(date_to)
-
-    cur = start
-    while cur <= end:
-        nxt = (cur + relativedelta(months=step_months))
-        # делаем end включительно, но не выходим за date_to
-        seg_end = min(end, (nxt - relativedelta(days=1)))
-        yield _to_api_dt(cur, end_of_day=False), _to_api_dt(seg_end, end_of_day=True)
-        cur = nxt
-
-@st.cache_data(ttl=24 * 60 * 60)
-def load_df_long_history(
-    secids: list[str],
-    date_from: str,
-    date_to: str,
-    chunk_size: int = 30,
-    step_months: int = 6,
-    page_size: int = 100,
-) -> pd.DataFrame:
-    """
-    Длинная история: дробим запрос по времени и по инструментам.
-    Возвращает те же поля, что и load_df, чтобы дальнеи код не менялся.
-    """
-    token = get_token(API_LOGIN, API_PASS)
-    if not token:
-        raise RuntimeError("Ошибка авторизации: не удалось получить токен")
-
-    all_results = []
-
-    # 1) режем по инструментам
-    for sec_chunk in chunk_list(secids, chunk_size):
-        # 2) режем по времени
-        for d_from, d_to in _iter_month_ranges(date_from, date_to, step_months):
-            part = fetch_all_trading_results(
-                token=token,
-                instruments=list(sec_chunk),
-                date_from=d_from,
-                date_to=d_to,
-                page_size=page_size,
-            )
-            if part:
-                all_results.extend(part)
-
-    if not all_results:
-        return pd.DataFrame(columns=["shortname", "fund", "isin", "volume", "value", "numtrades", "open", "close", "waprice", "tradedate"])
-
-    raw = pd.DataFrame(all_results)
-
-    need_cols = ["shortname", "secid", "isin", "volume", "value", "numtrades", "open", "close", "waprice", "tradedate"]
-    for c in need_cols:
-        if c not in raw.columns:
-            raw[c] = np.nan
-
-    df = raw[need_cols].copy()
-
-    # Восстанавливаем isin по secid, если isin не пришел
-    df["isin"] = df["isin"].fillna(df["secid"].map(MOEX_CODE_TO_ISIN))
-    # На случаи, когда API положил secid в поле isin
-    df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
-
-    df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
-    df["value"]     = pd.to_numeric(df["value"], errors="coerce")
-    df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")
-    df["close"]     = pd.to_numeric(df["close"], errors="coerce")
-    df["waprice"]   = pd.to_numeric(df["waprice"], errors="coerce")
-    df["open"]      = pd.to_numeric(df["open"], errors="coerce")
-
-    df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
-    df = df.dropna(subset=["isin", "tradedate"])
-
-    # имя фонда (как в load_df)
     df["fund"] = df["isin"].map(FUND_MAP).fillna(df["shortname"].astype(str))
 
     return df
