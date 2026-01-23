@@ -175,12 +175,12 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
 # 2) если в isin лежит MOEX-код (XACCSK/XTRIUMF/...), переводим в ISIN
     df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
 
-    df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
-    df["value"]     = pd.to_numeric(df["value"], errors="coerce")        # денежныи оборот
-    df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")    # число сделок
+    df["volume"]    = _to_num_series(df["volume"], errors="coerce")
+    df["value"]     = _to_num_series(df["value"], errors="coerce")        # денежныи оборот
+    df["numtrades"] = _to_num_series(df["numtrades"], errors="coerce")    # число сделок
     df["close"]     = _to_num_series(df["close"], errors="coerce")
-    df["waprice"] = pd.to_numeric(df["waprice"], errors="coerce")
-    df["open"] = pd.to_numeric(df["open"], errors="coerce")
+    df["waprice"] = _to_num_series(df["waprice"], errors="coerce")
+    df["open"] = _to_num_series(df["open"], errors="coerce")
 
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
@@ -267,12 +267,12 @@ def load_df_long_history(
     df["isin"] = df["isin"].fillna(df["secid"])
     df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
 
-    df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
-    df["value"]     = pd.to_numeric(df["value"], errors="coerce")
-    df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")
+    df["volume"]    = _to_num_series(df["volume"], errors="coerce")
+    df["value"]     = _to_num_series(df["value"], errors="coerce")
+    df["numtrades"] = _to_num_series(df["numtrades"], errors="coerce")
     df["close"]     = _to_num_series(df["close"], errors="coerce")
-    df["waprice"]   = pd.to_numeric(df["waprice"], errors="coerce")
-    df["open"]      = pd.to_numeric(df["open"], errors="coerce")
+    df["waprice"]   = _to_num_series(df["waprice"], errors="coerce")
+    df["open"]      = _to_num_series(df["open"], errors="coerce")
 
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
