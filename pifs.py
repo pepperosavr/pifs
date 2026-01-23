@@ -161,7 +161,7 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
         raise RuntimeError("Ошибка авторизации: не удалось получить токен")
 
     all_results = []
-    for chunk in chunk_list(secids, 100):
+    for chunk in chunk_list(secids, 30):
         all_results.extend(fetch_all_trading_results(token, chunk, date_from, date_to))
 
     if not all_results:
