@@ -11,6 +11,7 @@ import streamlit as st
 import plotly.express as px
 from datetime import datetime, timezone, date
 from pathlib import Path
+from typing import Optional, List
 
 # -----------------------
 # Конфигурация
@@ -83,7 +84,8 @@ MOEX_CODE_TO_ISIN = {secid: isin for isin, secid in ISIN_TO_MOEX_CODE.items()}
 # -----------------------
 # API helpers
 # -----------------------
-def do_post_request(url: str, body: dict, token: str | None) -> dict | None:
+
+def do_post_request(url: str, body: dict, token: Optional[str]) -> Optional[dict]:
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -92,7 +94,7 @@ def do_post_request(url: str, body: dict, token: str | None) -> dict | None:
         return r.json()
     return None
 
-def get_token(login: str, password: str) -> str | None:
+def get_token(login: str, password: str) -> Optional[str]:
     url = f"{API_URL}/Account/Login"
     body = {"login": login, "password": password}
     data = do_post_request(url, body, None)
@@ -142,8 +144,43 @@ def fetch_all_trading_results(token: str, instruments: list[str], date_from: str
 # -----------------------
 # Загрузка данных (кеширование)
 # -----------------------
+
+def _results_to_df(all_results: list) -> pd.DataFrame:
+    # Важно: добавили open (иначе KeyError в волатильности Open->Close)
+    cols = ["shortname", "isin", "volume", "value", "numtrades", "open", "close", "waprice", "tradedate", "fund"]
+
+    if not all_results:
+        return pd.DataFrame(columns=cols)
+
+    df = pd.DataFrame(all_results)
+
+    need = ["shortname", "isin", "volume", "value", "numtrades", "open", "close", "waprice", "tradedate"]
+    for c in need:
+        if c not in df.columns:
+            df[c] = np.nan
+
+    df = df[need].copy()
+
+    # ВАЖНО: иногда API возвращает в поле "isin" торговый код (SECID).
+    # Восстанавливаем ISIN там, где это нужно.
+    df["isin"] = df["isin"].astype(str).map(lambda x: MOEX_CODE_TO_ISIN.get(x, x))
+
+    for c in ["volume", "value", "numtrades", "open", "close", "waprice"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
+    df = df.dropna(subset=["isin", "tradedate"])
+
+    # имя фонда
+    df["fund"] = df["isin"].map(FUND_MAP).fillna(df["shortname"].astype(str))
+
+    # порядок колонок для удобства
+    df = df[["shortname", "fund", "isin", "volume", "value", "numtrades", "open", "close", "waprice", "tradedate"]]
+    return df
+
+
 @st.cache_data(ttl=24 * 60 * 60)
-def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
+def load_df(secids: List[str], date_from: str, date_to: str) -> pd.DataFrame:
     token = get_token(API_LOGIN, API_PASS)
     if not token:
         raise RuntimeError("Ошибка авторизации: не удалось получить токен")
@@ -152,38 +189,69 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     for chunk in chunk_list(secids, 100):
         all_results.extend(fetch_all_trading_results(token, chunk, date_from, date_to))
 
-    if not all_results:
-        return pd.DataFrame(columns=["shortname", "fund", "isin", "volume", "value", "numtrades", "close", "tradedate"])
-
-    df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "waprice", "tradedate"]]
+    return _results_to_df(all_results)
 
 
-    df = pd.DataFrame(all_results)[["shortname", "isin", "volume", "value", "numtrades", "close", "waprice", "tradedate"]]
+def _fmt_api_dt(ts: pd.Timestamp) -> str:
+    ts = pd.to_datetime(ts, utc=True)
+    return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
-    df["value"]     = pd.to_numeric(df["value"], errors="coerce")        # денежныи оборот
-    df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")    # число сделок
-    df["close"]     = pd.to_numeric(df["close"], errors="coerce")
-    df["waprice"] = pd.to_numeric(df["waprice"], errors="coerce")
 
-    df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
-    df = df.dropna(subset=["isin", "tradedate"])
+@st.cache_data(ttl=24 * 60 * 60)
+def load_df_long_history(
+    secids: List[str],
+    date_from: str,
+    date_to: str,
+    chunk_size: int = 100,
+    step_months: int = 6,
+) -> pd.DataFrame:
+    """
+    Загрузка длинной истории по шагам по времени (окнами по step_months месяцев),
+    чтобы не упираться в ограничения API по объему.
+    """
+    token = get_token(API_LOGIN, API_PASS)
+    if not token:
+        raise RuntimeError("Ошибка авторизации: не удалось получить токен")
 
-    # имя фонда 
-    df["fund"] = df["isin"].map(FUND_MAP).fillna(df["shortname"].astype(str))
+    start = pd.to_datetime(date_from, utc=True)
+    end = pd.to_datetime(date_to, utc=True)
 
-    return df
+    all_results = []
+    cur = start
+
+    # Окна: [cur; win_end]
+    while cur <= end:
+        win_end = cur + pd.DateOffset(months=step_months) - pd.Timedelta(seconds=1)
+        if win_end > end:
+            win_end = end
+
+        df_from = _fmt_api_dt(cur)
+        df_to = _fmt_api_dt(win_end)
+
+        for chunk in chunk_list(secids, chunk_size):
+            all_results.extend(fetch_all_trading_results(token, chunk, df_from, df_to))
+
+        cur = win_end + pd.Timedelta(seconds=1)
+
+    return _results_to_df(all_results)
 
 # -----------------------
 # Streamlit UI
 # -----------------------
 st.title("Торги ЗПИФ")
 
-section = st.segmented_control(
-    "Раздел",
-    options=["Основные графики", "Доходность"],
-    default="Основные графики",
-)
+if hasattr(st, "segmented_control"):
+    section = st.segmented_control(
+        "Раздел",
+        options=["Основные графики", "Доходность"],
+        default="Основные графики",
+    )
+else:
+    section = st.radio(
+        "Раздел",
+        options=["Основные графики", "Доходность"],
+        horizontal=True,
+    )
 
 # Период загрузки
 
@@ -213,14 +281,6 @@ df = df[df["isin"].isin(TARGET_ISINS)].copy()
 if df.empty:
     st.warning("Данных не найдено за выбранныи период.")
     st.stop()
-
-# Снапшот
-out_dir = Path("snapshots")
-out_dir.mkdir(parents=True, exist_ok=True)
-snap_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-out_path = out_dir / f"zpif_history_{snap_date}.csv"
-df.to_csv(out_path, index=False, encoding="utf-8")
-print(f"Saved snapshot to: {out_path.resolve()}")
 
 # Выбор фондов
 
@@ -588,19 +648,19 @@ if mode == "Режим истории":
         x="tradedate",
         y="close_change_pct",
         color="label",
-        hover_data=["fund", "isin", "close", "volume", "value"],
         markers=True,
+        custom_data=["fund", "isin", "close", "volume", "value"],
         labels={"close_change_pct": "Изменение цены закрытия, %", "tradedate": "Дата"},
-)
+    )
 
-# Показываем изменение цены как процент в hover
     fig_close_pct.update_yaxes(hoverformat=".2f")
     fig_close_pct.update_layout(separators=". ")
-    
+
     fig_close_pct.update_traces(
         hovertemplate=(
             "Дата: %{x|%Y-%m-%d}<br>"
             "Фонд: %{customdata[0]}<br>"
+            "ISIN: %{customdata[1]}<br>"
             "Цена закрытия: %{customdata[2]:,.2f}<br>"
             "Изменение цены закрытия: %{y:.2f}%<br>"
             "Объем бумаг: %{customdata[3]:,.0f}<br>"
@@ -609,6 +669,7 @@ if mode == "Режим истории":
         )
     )
     st.plotly_chart(fig_close_pct, use_container_width=True)
+        
 
     # -------- 7a2) Волатильность цены (по close) --------
     
