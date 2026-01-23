@@ -282,11 +282,20 @@ def load_df_long_history(
 # -----------------------
 st.title("Торги ЗПИФ")
 
-section = st.segmented_control(
-    "Раздел",
-    options=["Основные графики", "Доходность"],
-    default="Основные графики",
-)
+    # Выбор раздела: segmented_control есть не во всех версиях Streamlit
+if hasattr(st, "segmented_control"):
+    section = st.segmented_control(
+        "Раздел",
+        options=["Основные графики", "Доходность"],
+        default="Основные графики",
+    )
+else:
+    section = st.radio(
+        "Раздел",
+        options=["Основные графики", "Доходность"],
+        index=0,
+        horizontal=True,
+    )
 
 # Период загрузки
 
