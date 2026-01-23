@@ -178,7 +178,7 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
     df["value"]     = pd.to_numeric(df["value"], errors="coerce")        # денежныи оборот
     df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")    # число сделок
-    df["close"]     = pd.to_numeric(df["close"], errors="coerce")
+    df["close"]     = _to_num_series(df["close"], errors="coerce")
     df["waprice"] = pd.to_numeric(df["waprice"], errors="coerce")
     df["open"] = pd.to_numeric(df["open"], errors="coerce")
 
@@ -270,7 +270,7 @@ def load_df_long_history(
     df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
     df["value"]     = pd.to_numeric(df["value"], errors="coerce")
     df["numtrades"] = pd.to_numeric(df["numtrades"], errors="coerce")
-    df["close"]     = pd.to_numeric(df["close"], errors="coerce")
+    df["close"]     = _to_num_series(df["close"], errors="coerce")
     df["waprice"]   = pd.to_numeric(df["waprice"], errors="coerce")
     df["open"]      = pd.to_numeric(df["open"], errors="coerce")
 
@@ -331,13 +331,16 @@ if df.empty:
     st.warning("Данных не найдено за выбранныи период.")
     st.stop()
 
-# Снапшот
-out_dir = Path("snapshots")
-out_dir.mkdir(parents=True, exist_ok=True)
-snap_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-out_path = out_dir / f"zpif_history_{snap_date}.csv"
-df.to_csv(out_path, index=False, encoding="utf-8")
-print(f"Saved snapshot to: {out_path.resolve()}")
+def _to_num_series(s: pd.Series) -> pd.Series:
+    # Нормализуем типичные форматы чисел: пробелы/неразрывные пробелы, запятая как десятичный разделитель
+    if s is None:
+        return pd.Series(dtype="float64")
+    s = s.astype(str)
+    s = s.str.replace("\xa0", "", regex=False)  # NBSP
+    s = s.str.replace(" ", "", regex=False)
+    s = s.str.replace(",", ".", regex=False)
+    s = s.replace(["", "nan", "None"], np.nan)
+    return pd.to_numeric(s, errors="coerce")
 
 # Выбор фондов
 
