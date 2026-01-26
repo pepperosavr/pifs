@@ -367,7 +367,7 @@ QUAL_BY_ISIN = {
 
 df["qual"] = df["isin"].map(QUAL_BY_ISIN).fillna("неизвестно")
 
-available_funds = sorted(df["fund"].unique().tolist())
+available_funds = sorted(dict.fromkeys(FUND_MAP.values()))
 
 SELECT_KEY = "fund_select"
 
