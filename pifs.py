@@ -1,3 +1,5 @@
+# фонды ПОСЛЕДНЯЯ ВЕРСИЯ
+
 #!/usr/bin/env python
 # coding: utf-8
 
@@ -283,12 +285,20 @@ def load_df_long_history(
 # -----------------------
 st.title("Торги ЗПИФ")
 
-section = st.segmented_control(
-    "Раздел",
-    options=["Основные графики", "Доходность"],
-    default="Основные графики",
-)
-
+if hasattr(st, "segmented_control"):
+    section = st.segmented_control(
+        "Раздел",
+        options=["Основные графики", "Доходность"],
+        default="Основные графики",
+    )
+else:
+    section = st.radio(
+        "Раздел",
+        options=["Основные графики", "Доходность"],
+        index=0,
+        horizontal=True,
+    )
+    
 # Период загрузки
 
 utc_now = datetime.now(timezone.utc)
@@ -1340,3 +1350,4 @@ else:
     st.dataframe(display, use_container_width=True, hide_index=True)
 
 st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
+
