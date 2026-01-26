@@ -18,25 +18,12 @@ from pathlib import Path
 API_URL = "https://dh2.efir-net.ru/v2"
 
 def get_secret(name: str, default: str = "") -> str:
-    # 1) пробуем Streamlit secrets
-    try:
-        if hasattr(st, "secrets"):
-            v = st.secrets.get(name, None)
-            if v is not None:
-                return str(v)
-    except Exception:
-        # secrets.toml отсутствует -> игнорируем и идем в env
-        pass
-
-    # 2) пробуем переменные окружения
+    if hasattr(st, "secrets") and name in st.secrets:
+        return str(st.secrets[name])
     return os.getenv(name, default)
 
-API_LOGIN = get_secret("API_LOGIN", "")
-API_PASS  = get_secret("API_PASS", "")
-
-if not API_LOGIN or not API_PASS:
-    st.error("Не заданы API_LOGIN / API_PASS. Добавьте их в Secrets (HF) или в переменные окружения.")
-    st.stop()
+API_LOGIN = get_secret("API_LOGIN", "accentam-api1")
+API_PASS  = get_secret("API_PASS",  "653Bsw")
     
 
 # 1) НУЖНЫЕ ФОНДЫ (ISIN + названия)
