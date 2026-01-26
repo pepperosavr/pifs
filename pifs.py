@@ -18,12 +18,26 @@ from pathlib import Path
 API_URL = "https://dh2.efir-net.ru/v2"
 
 def get_secret(name: str, default: str = "") -> str:
-    if hasattr(st, "secrets") and name in st.secrets:
-        return str(st.secrets[name])
+    # 1) пробуем Streamlit secrets
+    try:
+        if hasattr(st, "secrets"):
+            v = st.secrets.get(name, None)
+            if v is not None:
+                return str(v)
+    except Exception:
+        # secrets.toml отсутствует -> игнорируем и идем в env
+        pass
+
+    # 2) пробуем переменные окружения
     return os.getenv(name, default)
 
-API_LOGIN = get_secret("API_LOGIN", "accentam-api1")
-API_PASS  = get_secret("API_PASS",  "653Bsw")
+API_LOGIN = get_secret("API_LOGIN", "")
+API_PASS  = get_secret("API_PASS", "")
+
+if not API_LOGIN or not API_PASS:
+    st.error("Не заданы API_LOGIN / API_PASS. Добавьте их в Secrets (HF) или в переменные окружения.")
+    st.stop()
+    
 
 # 1) НУЖНЫЕ ФОНДЫ (ISIN + названия)
 FUND_MAP = {
@@ -294,7 +308,7 @@ utc_now = datetime.now(timezone.utc)
 date_to = utc_now.strftime("%Y-%m-%dT23:59:59Z")
 
 if section == "Доходность":
-    date_from = "2018-01-01T00:00:00Z"
+    date_from = "2020-01-01T00:00:00Z"
     try:
         df = load_df_long_history(
             ZPIF_SECIDS,
@@ -388,7 +402,7 @@ GROUPS = {
     ],
 
     # АБ Капитал
-    "АБ-Капитал": [FUND_MAP.get("RU000A108157", "Рентал-Про")],
+    "АБ-Капитал (Рентал Про)": [FUND_MAP.get("RU000A108157", "Рентал-Про")],
 
     # Активо
     "Активо": [
@@ -475,10 +489,9 @@ df_sel["label"] = df_sel["fund"].astype(str) + " (" + df_sel["isin"].astype(str)
 # =========================================================
 if section == "Доходность":
     st.subheader("Доходность (накопленная, %): 1 пай, купленный в разные периоды")
-    st.caption("Считается по цене (close): без учета возможных выплат/распределений.")
 
-     # df уже загружен выше в виде длиннои истории (с 2018)
-    date_from_long = "2018-01-01T00:00:00Z"
+     # df уже загружен выше в виде длиннои истории (с 2020)
+    date_from_long = "2020-01-01T00:00:00Z"
     df_long = df.copy()
 
     # 2) Те же названия и label
@@ -1234,206 +1247,7 @@ if mode == "Режим истории":
 
             st.dataframe(display, use_container_width=True, hide_index=True)
 
-        # мосбиржа
-
-        ISS_BASE = "https://iss.moex.com/iss"
-
-        from datetime import timedelta
-
-        INDEX_MAP = {
-            "RGBI": "RGBI",
-            "RGBITR": "RGBITR",
-            "RUCBCPNS": "RUCBCPNS",
-            "RUCBTRNS": "RUCBTRNS",
-            "RUSFAR": "RUSFAR",
-            "CREI": "CREI",
-            "MREF": "MREF",
-        }
-
-        def _iss_get(url: str, params: dict | None = None) -> dict:
-            r = requests.get(url, params=params, timeout=30)
-            r.raise_for_status()
-            return r.json()
-
-        @st.cache_data(ttl=24 * 60 * 60)
-        def resolve_board(secid: str) -> tuple[str, str, str]:
-            j = _iss_get(f"{ISS_BASE}/securities/{secid}.json", params={"iss.meta": "off", "iss.only": "boards"})
-            boards = pd.DataFrame(j["boards"]["data"], columns=j["boards"]["columns"])
-
-    # наиболее частый случай: engine=stock, market=index, is_traded=1
-            if "is_traded" in boards.columns:
-                boards = boards.sort_values("is_traded", ascending=False)
-
-            cand = boards[boards.get("engine").astype(str).eq("stock")] if "engine" in boards.columns else boards
-            pref = cand[cand.get("market").astype(str).eq("index")] if "market" in cand.columns else cand
-
-            pick = pref.iloc[0] if len(pref) else cand.iloc[0]
-            return str(pick["engine"]), str(pick["market"]), str(pick["boardid"])
-
-        @st.cache_data(ttl=24 * 60 * 60)
-        def load_index_candles(secid: str, d_from: date, d_to: date) -> pd.DataFrame:
-            engine, market, board = resolve_board(secid)
-            url = f"{ISS_BASE}/engines/{engine}/markets/{market}/boards/{board}/securities/{secid}/candles.json"
-
-            frames = []
-            start = 0
-
-            while True:
-                j = _iss_get(url, params={
-                    "from": d_from.isoformat(),
-                    "till": d_to.isoformat(),
-                    "interval": 24,         # дневные свечи
-                    "start": start,         # пагинация
-                    "iss.meta": "off",
-                })
-
-                candles_block = j.get("candles", {})
-                data = candles_block.get("data", [])
-                cols = candles_block.get("columns", [])
-
-                if not data or not cols:
-                    break
-
-                part = pd.DataFrame(data, columns=cols)
-                if part.empty:
-                    break
-
-                frames.append(part)
-                got = len(part)
-                if got < 100:
-                    break
-
-                start += got
-
-            if not frames:
-                return pd.DataFrame(columns=["secid", "tradedate", "close"])
-
-            candles = pd.concat(frames, ignore_index=True)
-
-    # типичные поля: begin, open, close, high, low, value, volume
-            if "begin" not in candles.columns or "close" not in candles.columns:
-                return pd.DataFrame(columns=["secid", "tradedate", "close"])
-
-            candles["tradedate"] = pd.to_datetime(candles["begin"], errors="coerce").dt.date
-            candles["close"] = pd.to_numeric(candles["close"], errors="coerce")
-
-            out = candles[["tradedate", "close"]].dropna().copy()
-            out["secid"] = secid
-            return out
-
-        st.subheader("Индексы Московской биржи за выбранный период")
-
-        IDX_KEY = "idx_select"
-        idx_selected = st.multiselect(
-            "Выберите индексы",
-            options=list(INDEX_MAP.keys()),
-            default=["RGBI", "RGBITR", "RUCBCPNS", "RUCBTRNS", "RUSFAR", "CREI", "MREF"],
-            key=IDX_KEY,
-        )
-
-        if not idx_selected:
-            st.info("Выберите хотя бы один индекс.")
-            st.stop()
-
-# --- грузим данные по выбранным индексам в idx_df ---
-        errors = {}
-        idx_frames = []
-
-        idx_to_full = date.today()
-        idx_from_full = idx_to_full - timedelta(days=365 * 5)  # 5 лет
-
-        for secid in idx_selected:
-            try:
-                tmp = load_index_candles(secid, idx_from_full, idx_to_full)
-                if tmp.empty:
-                    errors[secid] = "пустои ответ candles за выбранный диапазон"
-                else:
-                    idx_frames.append(tmp)
-            except Exception as e:
-                errors[secid] = str(e)
-
-        if errors:
-            st.warning(
-                "Не удалось загрузить часть индексов:\n" +
-                "\n".join([f"{k}: {v}" for k, v in errors.items()])
-            )
-
-        if not idx_frames:
-            st.info("Нет данных по выбранным индексам за доступный период.")
-            st.stop()
-
-        idx_df = pd.concat(idx_frames, ignore_index=True)
-        idx_df = idx_df.dropna(subset=["tradedate", "close"]).copy()
-
-# метка для легенды/цветов
-        idx_df["label"] = idx_df["secid"]
-
-# Даты по выбранным индексам
-        idx_dates = sorted(idx_df["tradedate"].unique().tolist())
-        if len(idx_dates) < 2:
-            st.warning("Недостаточно дат по выбранным индексам, чтобы построить период.")
-            st.stop()
-
-# --- отдельный выбор периода для индексов ---
-        idx_end_date = st.select_slider(
-            "Конечная дата (индексы)",
-            options=idx_dates,
-            value=idx_dates[-1],
-            key="idx_end_date",
-        )
-
-        idx_max_window = min(252, len(idx_dates))
-        idx_window = st.slider(
-            "Длина периода (торговые дни) (индексы)",
-            min_value=2,
-            max_value=idx_max_window,
-            value=min(30, idx_max_window),
-            step=1,
-            key="idx_window",
-        )
-
-        idx_date_to_i = {d: i for i, d in enumerate(idx_dates)}
-        idx_end_i = idx_date_to_i[idx_end_date]
-        idx_start_i = max(0, idx_end_i - idx_window + 1)
-        idx_start_date = idx_dates[idx_start_i]
-
-        st.caption(f"Период: {idx_start_date} — {idx_end_date} (торговых дней: {idx_window})")
-
-# фильтр по окну индексов
-        idx_period = idx_df[
-            (idx_df["tradedate"] >= idx_start_date) &
-            (idx_df["tradedate"] <= idx_end_date)
-        ].copy()
-
-# схлопывание дублеи по дате (если есть)
-        idx_period = (
-            idx_period.sort_values(["secid", "tradedate"])
-                      .groupby(["secid", "label", "tradedate"], as_index=False)
-                      .agg(close=("close", "last"))
-        )
-
-        fig_idx = px.line(
-            idx_period,
-            x="tradedate",
-            y="close",
-            color="label",
-            markers=True,
-            labels={"close": "Значение индекса", "tradedate": "Дата"},
-            custom_data=["secid"],
-        )
-
-        fig_idx.update_layout(separators=". ")
-        fig_idx.update_traces(
-            hovertemplate=(
-                "Дата: %{x|%Y-%m-%d}<br>"
-                "Индекс: %{customdata[0]}<br>"
-                "Значение: %{y:,.2f}<br>"
-                "<extra></extra>"
-            )
-        )
-
-        st.plotly_chart(fig_idx, use_container_width=True)
-
+        
 # ---------- РЕЖИМ 2: СРАВНЕНИЕ (сегодня vs предыдущий торговыи день) ----------
 else:
     st.subheader("Изменение цены закрытия, средневзвешенная цена")
