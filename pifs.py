@@ -14,8 +14,6 @@ import plotly.express as px
 from datetime import datetime, timezone, date
 from pathlib import Path
 
-st.set_page_config(page_title="Торги ЗПИФ", layout="wide")
-
 # -----------------------
 # Конфигурация
 # -----------------------
