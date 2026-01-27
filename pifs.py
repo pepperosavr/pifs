@@ -214,39 +214,86 @@ def _iter_month_ranges(date_from: str, date_to: str, step_months: int):
         yield _to_api_dt(cur, end_of_day=False), _to_api_dt(seg_end, end_of_day=True)
         cur = nxt
 
+def _fetch_range_safe(
+    token: str,
+    instruments: list[str],
+    start_d: date,
+    end_d: date,
+    page_size: int = 100,
+    min_days: int = 31,   # ниже этого уже не дробим, чтобы не уйти в бесконечность
+) -> list[dict]:
+    """
+    Пытается скачать диапазон целиком. Если не получилось, режет пополам и повторяет.
+    """
+    date_from = _to_api_dt(start_d, end_of_day=False)
+    date_to   = _to_api_dt(end_d, end_of_day=True)
+
+    try:
+        return fetch_all_trading_results(
+            token=token,
+            instruments=instruments,
+            date_from=date_from,
+            date_to=date_to,
+            page_size=page_size,
+        )
+    except Exception as e:
+        # если диапазон уже маленькии, дальше делить бессмысленно — пробрасываем ошибку
+        if (end_d - start_d).days <= min_days:
+            raise RuntimeError(f"Failed on small range {start_d}..{end_d}: {e}")
+
+        mid = start_d + timedelta(days=((end_d - start_d).days // 2))
+        left = _fetch_range_safe(token, instruments, start_d, mid, page_size=page_size, min_days=min_days)
+        right_start = mid + timedelta(days=1)
+        right = _fetch_range_safe(token, instruments, right_start, end_d, page_size=page_size, min_days=min_days)
+        return left + right
+
 @st.cache_data(ttl=24 * 60 * 60)
 def load_df_long_history(
     secids: list[str],
     date_from: str,
     date_to: str,
     chunk_size: int = 30,
-    step_months: int = 6,
+    step_months: int = 6,   # можно оставить, но ниже мы будем качать безопасно по всему диапазону
     page_size: int = 100,
 ) -> pd.DataFrame:
-    """
-    Длинная история: дробим запрос по времени и по инструментам.
-    Возвращает те же поля, что и load_df, чтобы дальнеи код не менялся.
-    """
+
     token = get_token(API_LOGIN, API_PASS)
     if not token:
         raise RuntimeError("Ошибка авторизации: не удалось получить токен")
 
+    start_d = _to_date(date_from)
+    end_d   = _to_date(date_to)
+
     all_results = []
 
-    # 1) режем по инструментам
-    for sec_chunk in chunk_list(secids, chunk_size):
-        # 2) режем по времени
-        for d_from, d_to in _iter_month_ranges(date_from, date_to, step_months):
-            part = fetch_all_trading_results(
-                token=token,
-                instruments=list(sec_chunk),
-                date_from=d_from,
-                date_to=d_to,
-                page_size=page_size,
-            )
-            if part:
-                all_results.extend(part)
+    # прогресс по чанкам инструментов (чтобы видеть, что именно висит)
+    total_chunks = (len(secids) + chunk_size - 1) // chunk_size
+    prog = st.progress(0)
+    status = st.status("Загрузка длиннои истории...", expanded=True)
 
+    for i, sec_chunk in enumerate(chunk_list(secids, chunk_size), start=1):
+        inst = list(sec_chunk)
+
+        status.write(f"Чанк {i}/{total_chunks}: инструментов={len(inst)}, период={start_d}..{end_d}")
+
+        # главное отличие: качаем весь диапазон с адаптивным дроблением на ошибках
+        part = _fetch_range_safe(
+            token=token,
+            instruments=inst,
+            start_d=start_d,
+            end_d=end_d,
+            page_size=page_size,
+            min_days=31,
+        )
+        if part:
+            all_results.extend(part)
+
+        prog.progress(int(i / total_chunks * 100))
+
+    status.update(label="Загрузка длиннои истории завершена", state="complete")
+    prog.empty()
+
+    # дальше ваш код формирования df оставляем прежним
     if not all_results:
         return pd.DataFrame(columns=["shortname", "fund", "isin", "volume", "value", "numtrades", "open", "close", "waprice", "tradedate"])
 
@@ -258,10 +305,7 @@ def load_df_long_history(
             raw[c] = np.nan
 
     df = raw[need_cols].copy()
-
-    # Восстанавливаем isin по secid, если isin не пришел
     df["isin"] = df["isin"].fillna(df["secid"].map(MOEX_CODE_TO_ISIN))
-    # На случаи, когда API положил secid в поле isin
     df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
 
     df["volume"]    = pd.to_numeric(df["volume"], errors="coerce")
@@ -274,9 +318,7 @@ def load_df_long_history(
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
 
-    # имя фонда (как в load_df)
     df["fund"] = df["isin"].map(FUND_MAP).fillna(df["shortname"].astype(str))
-
     return df
 
 # -----------------------
