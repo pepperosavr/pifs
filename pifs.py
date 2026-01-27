@@ -13,6 +13,19 @@ import streamlit as st
 import plotly.express as px
 from datetime import datetime, timezone, date
 from pathlib import Path
+import sys
+import plotly
+
+with st.sidebar.expander("Диагностика окружения", expanded=False):
+    st.code(
+        "Python:   " + sys.version.split()[0] + "\n"
+        "streamlit:" + st.__version__ + "\n"
+        "pandas:   " + pd.__version__ + "\n"
+        "plotly:   " + plotly.__version__ + "\n",
+        language="text"
+    )
+
+
 
 # -----------------------
 # Конфигурация
@@ -677,51 +690,74 @@ if mode == "Режим истории":
     start_idx = max(0, end_idx - window + 1)
     start_date = available_dates[start_idx]
 
-# -------- 7) Изменение цены закрытия (%) за период --------
+    # --- 7) Изменение цены закрытия (%) за период ---
     period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
 
     st.subheader("Изменение цены закрытия (%)")
     st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
-    if period_df.empty:
-        st.info("За выбранный период нет данных.")
-    else:
-        period_df = period_df.dropna(subset=["close"]).copy()
-        period_df = (
-            period_df.sort_values(["label", "tradedate"])
-                     .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
-                     .agg(close=("close", "last"), volume=("volume", "sum"), value=("value", "sum"))
-        )
-
-        base_close = period_df.groupby("label")["close"].transform("first")
-        period_df["close_change_pct"] = (period_df["close"] / base_close - 1.0) * 100.0
-
-    fig_close_pct = px.line(
-    period_df,
-    x="tradedate",
-    y="close_change_pct",
-    color="label",
-    markers=True,
-    custom_data=["fund", "isin", "close", "volume", "value"],
-    labels={"close_change_pct": "Изменение цены закрытия, %", "tradedate": "Дата"},
-)
-
-# Показываем изменение цены как процент в hover
-    fig_close_pct.update_yaxes(hoverformat=".2f")
-    fig_close_pct.update_layout(separators=". ")
-    
-    fig_close_pct.update_traces(
-        hovertemplate=(
-            "Дата: %{x|%Y-%m-%d}<br>"
-            "Фонд: %{customdata[0]}<br>"
-            "Цена закрытия: %{customdata[2]:,.2f}<br>"
-            "Изменение цены закрытия: %{y:.2f}%<br>"
-            "Объем бумаг: %{customdata[3]:,.0f}<br>"
-            "Оборот (руб): %{customdata[4]:,.0f}<br>"
-            "<extra>%{fullData.name}</extra>"
-        )
+# 1) схлопываем дубли на фонд/дату
+    period_df = (
+        period_df.sort_values(["label", "tradedate"])
+                 .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+                 .agg(
+                     close=("close", "last"),
+                     volume=("volume", "sum"),
+                     value=("value", "sum"),
+                 )
     )
-    st.plotly_chart(fig_close_pct, use_container_width=True)
+
+# 2) приводим tradedate к datetime для Plotly (стабильнее, чем date-object)
+    period_df["tradedate_dt"] = pd.to_datetime(period_df["tradedate"])
+
+# 3) диагностируем фонды без close в окне
+    points = period_df.assign(has_close=period_df["close"].notna()).groupby(["label", "fund", "isin"], as_index=False).agg(
+        n_points=("tradedate", "count"),
+        n_close=("has_close", "sum"),
+    )
+    missing_close_labels = points.loc[points["n_close"] == 0, ["fund", "isin", "n_points"]]
+    if not missing_close_labels.empty:
+        with st.sidebar.expander("Диагностика графика close-change", expanded=False):
+            st.write("Фонды, у которых в выбранном окне нет ни одного close (поэтому они не строятся):")
+            st.dataframe(missing_close_labels, use_container_width=True, hide_index=True)
+
+# 4) считаем базовую цену: первая ненулевая/ненулевая close в окне
+    period_df = period_df.dropna(subset=["close"]).copy()
+    period_df = period_df.sort_values(["label", "tradedate_dt"])
+
+    period_df["base_close"] = period_df.groupby("label")["close"].transform("first")
+    period_df["close_change_pct"] = (period_df["close"] / period_df["base_close"] - 1.0) * 100.0
+
+# 5) чистим inf/-inf (на случаи мусорных нулеи в base_close)
+    period_df = period_df.replace([np.inf, -np.inf], np.nan).dropna(subset=["close_change_pct"])
+
+    if period_df.empty:
+        st.info("Недостаточно данных close для построения изменения цены в выбранном окне.")
+    else:
+        fig_close_pct = px.line(
+            period_df,
+            x="tradedate_dt",
+            y="close_change_pct",
+            color="label",
+            markers=True,
+            custom_data=["fund", "isin", "close", "volume", "value", "base_close"],
+            labels={"close_change_pct": "Изменение цены закрытия, %", "tradedate_dt": "Дата"},
+        )
+        fig_close_pct.update_layout(separators=". ")
+        fig_close_pct.update_traces(
+            hovertemplate=(
+                "Дата: %{x|%Y-%m-%d}<br>"
+                "Фонд: %{customdata[0]}<br>"
+                "ISIN: %{customdata[1]}<br>"
+                "Цена закрытия: %{customdata[2]:,.2f}<br>"
+                "База (close): %{customdata[5]:,.2f}<br>"
+                "Изменение: %{y:+.2f}%<br>"
+                "Объем бумаг: %{customdata[3]:,.0f}<br>"
+                "Оборот (руб): %{customdata[4]:,.0f}<br>"
+                "<extra>%{fullData.name}</extra>"
+            )
+        )
+        st.plotly_chart(fig_close_pct, use_container_width=True)
     
     # -------- 7a2) Волатильность цены (по close) --------
     
