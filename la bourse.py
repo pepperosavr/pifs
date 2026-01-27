@@ -432,6 +432,8 @@ if show_accent:
 # --- расчет метрики уже по общему набору ---
 series_df = _calc_metric(series_df_raw, mode=metric_mode)
 
+series_df['pct'] = series_df['pct'].round(2)
+
 # =========================
 # График
 # =========================
