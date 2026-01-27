@@ -692,60 +692,95 @@ if mode == "Режим истории":
     start_idx = max(0, end_idx - window + 1)
     start_date = available_dates[start_idx]
 
-    # -------- 7) Изменение цены закрытия (%) за период --------
-
-# какие фонды реально попали в период_df
-labels_all = set(df_sel["label"].unique())
-labels_in_period = set(period_df.dropna(subset=["close"])["label"].unique())
-missing_on_chart = sorted(labels_all - labels_in_period)
-
-if missing_on_chart:
-    st.warning(f"На графике не будет {len(missing_on_chart)} фондов: в выбранном окне нет close.")
-    st.dataframe(pd.DataFrame({"label": missing_on_chart}), use_container_width=True, hide_index=True)
-    
-    period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
-
+# -------- 7) Изменение цены закрытия (%) за период --------
     st.subheader("Изменение цены закрытия (%)")
     st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
-    if period_df.empty:
-        st.info("За выбранный период нет данных.")
-    else:
-        period_df = period_df.dropna(subset=["close"]).copy()
-        period_df = (
-            period_df.sort_values(["label", "tradedate"])
-                     .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
-                     .agg(close=("close", "last"), volume=("volume", "sum"), value=("value", "sum"))
-        )
+    window_dates = available_dates[start_idx:end_idx + 1]  # все даты окна
 
-        base_close = period_df.groupby("label")["close"].transform("first")
-        period_df["close_change_pct"] = (period_df["close"] / base_close - 1.0) * 100.0
+# 1) База сделок/цен (схлопнули дубли)
+    px_base = (
+        df_sel.dropna(subset=["close"])
+             .sort_values(["label", "tradedate"])
+             .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+             .agg(
+                 close=("close", "last"),
+                 volume=("volume", "sum"),
+                 value=("value", "sum"),
+             )
+    )
 
+# 2) "Сид" на старт окна: последняя цена ДО start_date (если была)
+    seed = (
+        px_base[px_base["tradedate"] < start_date]
+        .sort_values(["label", "tradedate"])
+        .groupby(["label", "fund", "isin"], as_index=False)
+        .tail(1)
+    )
+    seed = seed.assign(tradedate=start_date)
+
+# 3) Берем только окно + сид
+    px_win = pd.concat(
+        [seed, px_base[(px_base["tradedate"] >= start_date) & (px_base["tradedate"] <= end_date)]],
+        ignore_index=True
+    )
+
+# 4) Полная сетка: все фонды × все даты окна
+    labels_tbl = df_sel[["label", "fund", "isin"]].drop_duplicates()
+    grid = (
+        labels_tbl.assign(_k=1)
+                  .merge(pd.DataFrame({"tradedate": window_dates, "_k": 1}), on="_k")
+                  .drop(columns="_k")
+    )
+
+    period_df_plot = (
+        grid.merge(px_win, on=["label", "fund", "isin", "tradedate"], how="left")
+            .sort_values(["label", "tradedate"])
+    )
+
+# 5) Заполняем close "последним известным" (as-of)
+#    bfill нужен, чтобы фонд с первой сделкой внутри окна тоже появился с линии (до первой сделки будет плоско)
+    period_df_plot["close"] = period_df_plot.groupby("label")["close"].transform(lambda s: s.ffill().bfill())
+
+# обороты/объемы на неторговые дни логичнее считать 0
+    period_df_plot["volume"] = period_df_plot["volume"].fillna(0)
+    period_df_plot["value"] = period_df_plot["value"].fillna(0)
+
+# 6) Убираем фонды, у которых нет close вообще (не бывает, но на всякий случай)
+    period_df_plot = period_df_plot.dropna(subset=["close"])
+
+# 7) Доходность от базовой цены (первая точка окна после заполнения)
+    period_df_plot["base_close"] = period_df_plot.groupby("label")["close"].transform("first")
+    period_df_plot["close_change_pct"] = (period_df_plot["close"] / period_df_plot["base_close"] - 1.0) * 100.0
+
+# 8) Строим график (ВАЖНО: используем custom_data, раз вы обращаетесь к customdata в hovertemplate)
     fig_close_pct = px.line(
-        period_df,
+        period_df_plot,
         x="tradedate",
         y="close_change_pct",
         color="label",
-        hover_data=["fund", "isin", "close", "volume", "value"],
         markers=True,
+        custom_data=["fund", "isin", "close", "volume", "value", "base_close"],
         labels={"close_change_pct": "Изменение цены закрытия, %", "tradedate": "Дата"},
-)
+    )
 
-# Показываем изменение цены как процент в hover
     fig_close_pct.update_yaxes(hoverformat=".2f")
     fig_close_pct.update_layout(separators=". ")
-    
+
     fig_close_pct.update_traces(
         hovertemplate=(
             "Дата: %{x|%Y-%m-%d}<br>"
             "Фонд: %{customdata[0]}<br>"
+            "ISIN: %{customdata[1]}<br>"
             "Цена закрытия: %{customdata[2]:,.2f}<br>"
+            "База (close): %{customdata[5]:,.2f}<br>"
             "Изменение цены закрытия: %{y:.2f}%<br>"
             "Объем бумаг: %{customdata[3]:,.0f}<br>"
             "Оборот (руб): %{customdata[4]:,.0f}<br>"
             "<extra>%{fullData.name}</extra>"
         )
     )
+
     st.plotly_chart(fig_close_pct, use_container_width=True)
 
     # -------- 7a2) Волатильность цены (по close) --------
