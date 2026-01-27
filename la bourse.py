@@ -448,7 +448,7 @@ fig = px.line(
     color="label",
     markers=show_markers,
     labels={"tradedate": "Дата", "pct": "Изменение, %", "label": "Индекс"},
-    custom_data=["secid", "close"],
+    custom_data=["secid", "close", "pct"],
 )
 
 fig.update_layout(separators=". ")
@@ -458,7 +458,7 @@ fig.update_traces(
         "Дата: %{x|%Y-%m-%d}<br>"
         "Индекс: %{customdata[0]}<br>"
         "Значение: %{customdata[1]:,.2f}<br>"
-        "Изменение: %{y:+.2f}%<br>"
+        "Изменение: %{customdata[2]:+.2f}%<br>"
         "<extra></extra>"
     )
 )
