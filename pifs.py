@@ -280,6 +280,11 @@ def load_df_long_history(
 
     return df
 
+with st.sidebar:
+    if st.button("Очистить кеш"):
+        st.cache_data.clear()
+        st.experimental_rerun()
+
 # -----------------------
 # Streamlit UI
 # -----------------------
@@ -304,25 +309,35 @@ else:
 utc_now = datetime.now(timezone.utc)
 date_to = utc_now.strftime("%Y-%m-%dT23:59:59Z")
 
+with st.sidebar:
+    start_mode = st.selectbox(
+        "Период загрузки (Основные графики)",
+        options=["2020-01-01", "2023-01-01", "2025-01-01"],
+        index=2,
+    )
+
 if section == "Доходность":
     date_from = "2020-01-01T00:00:00Z"
-    try:
-        df = load_df_long_history(
-            ZPIF_SECIDS,
-            date_from,
-            date_to,
-            chunk_size=30,   # при необходимости уменьшить до 20/10
-            step_months=6    # при необходимости уменьшить до 3
-        )
-    except Exception as e:
-        st.error(f"Ошибка загрузки длиннои истории: {e}")
-        st.stop()
+    df = load_df_long_history(ZPIF_SECIDS, date_from, date_to, chunk_size=30, step_months=6)
 else:
-    date_from = "2025-01-01T00:00:00Z"
+    date_from = f"{start_mode}T00:00:00Z"
     df = load_df(ZPIF_SECIDS, date_from, date_to)
-
+    
 # На всякии случаи: оставляем только целевые ISIN
 df = df[df["isin"].isin(TARGET_ISINS)].copy()
+
+expected_isins = set(TARGET_ISINS)
+got_isins = set(df["isin"].dropna().unique().tolist())
+
+missing_isins = sorted(expected_isins - got_isins)
+if missing_isins:
+    miss = pd.DataFrame({
+        "isin": missing_isins,
+        "fund": [FUND_MAP.get(i, "") for i in missing_isins],
+    })
+    st.sidebar.subheader("Диагностика")
+    st.sidebar.write(f"Нет данных за период: {len(miss)} фондов")
+    st.sidebar.dataframe(miss, use_container_width=True, hide_index=True)
 
 if df.empty:
     st.warning("Данных не найдено за выбранныи период.")
@@ -469,7 +484,7 @@ with st.expander("Быстрый выбор: УК и квал/неквал", exp
         st.button("Снять все", key="btn_none", use_container_width=True,
                   on_click=lambda: st.session_state.__setitem__(SELECT_KEY, []))
 
-available_funds = sorted(df["fund"].unique().tolist())
+available_funds = sorted(dict.fromkeys(FUND_MAP.values()))
 
 selected_funds = st.session_state[SELECT_KEY]
 df_sel = df[df["fund"].isin(selected_funds)].copy().sort_values(["tradedate", "fund"])
