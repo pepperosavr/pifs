@@ -452,11 +452,12 @@ fig = px.line(
 )
 
 fig.update_layout(separators=". ")
+fig.update_yaxes(tickformat="+.2f", ticksuffix="%") 
 fig.update_traces(
     hovertemplate=(
         "Дата: %{x|%Y-%m-%d}<br>"
         "Индекс: %{customdata[0]}<br>"
-        "Close: %{customdata[1]:,.2f}<br>"
+        "Значение: %{customdata[1]:,.2f}<br>"
         "Изменение: %{y:+.2f}%<br>"
         "<extra></extra>"
     )
