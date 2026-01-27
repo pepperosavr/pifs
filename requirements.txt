@@ -1,7 +1,8 @@
 requests
 pandas
-matplotlib
-plotly
 numpy
+plotly
+matplotlib
+python-dateutil
 streamlit==1.28.2
 altair==4.2.2
