@@ -695,13 +695,13 @@ if mode == "Режим истории":
     # -------- 7) Изменение цены закрытия (%) за период --------
 
 # какие фонды реально попали в период_df
-    labels_all = set(df_sel["label"].unique())
-    labels_in_period = set(period_df.dropna(subset=["close"])["label"].unique())
-    missing_on_chart = sorted(labels_all - labels_in_period)
+labels_all = set(df_sel["label"].unique())
+labels_in_period = set(period_df.dropna(subset=["close"])["label"].unique())
+missing_on_chart = sorted(labels_all - labels_in_period)
 
-    if missing_on_chart:
-        st.warning(f"На графике не будет {len(missing_on_chart)} фондов: в выбранном окне нет close.")
-        st.dataframe(pd.DataFrame({"label": missing_on_chart}), use_container_width=True, hide_index=True)
+if missing_on_chart:
+    st.warning(f"На графике не будет {len(missing_on_chart)} фондов: в выбранном окне нет close.")
+    st.dataframe(pd.DataFrame({"label": missing_on_chart}), use_container_width=True, hide_index=True)
     
     period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
 
