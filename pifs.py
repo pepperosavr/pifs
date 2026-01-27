@@ -266,16 +266,6 @@ def load_df_long_history(
 
     all_results = []
 
-    # прогресс по чанкам инструментов (чтобы видеть, что именно висит)
-    total_chunks = (len(secids) + chunk_size - 1) // chunk_size
-    prog = st.progress(0)
-    status = st.status("Загрузка длиннои истории...", expanded=True)
-
-    for i, sec_chunk in enumerate(chunk_list(secids, chunk_size), start=1):
-        inst = list(sec_chunk)
-
-        status.write(f"Чанк {i}/{total_chunks}: инструментов={len(inst)}, период={start_d}..{end_d}")
-
         # главное отличие: качаем весь диапазон с адаптивным дроблением на ошибках
         part = _fetch_range_safe(
             token=token,
@@ -287,11 +277,6 @@ def load_df_long_history(
         )
         if part:
             all_results.extend(part)
-
-        prog.progress(int(i / total_chunks * 100))
-
-    status.update(label="Загрузка длиннои истории завершена", state="complete")
-    prog.empty()
 
     # дальше ваш код формирования df оставляем прежним
     if not all_results:
@@ -348,7 +333,7 @@ if section == "Доходность":
             step_months=6    # при необходимости уменьшить до 3
         )
     except Exception as e:
-        st.error(f"Ошибка загрузки длиннои истории: {e}")
+        st.error(f"Ошибка загрузки длинной истории: {e}")
         st.stop()
 else:
     date_from = "2025-01-01T00:00:00Z"
@@ -613,12 +598,13 @@ if section == "Доходность":
             title=None,
         )
         fig_ret.update_layout(separators=". ")
+
         fig_ret.update_traces(
             hovertemplate=(
                 "Дата: %{x|%Y-%m-%d}<br>"
                 "Фонд: %{customdata[0]}<br>"
-                "Цена закрытия: %{customdata[2]:,.2f}<br>"
-                "Базовая дата: %{customdata[3]} (close=%{customdata[4]:,.2f})<br>"
+                "Цена закрытия: %{customdata[2]:,.0f}<br>" 
+                "Базовая дата: %{customdata[3]}<br>"
                 "Накопленная доходность: %{y:+.2f}%<br>"
                 f"<extra>{title_suffix}</extra>"
             )
