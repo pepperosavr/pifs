@@ -590,13 +590,15 @@ if section == "Доходность":
             st.info("Недостаточно данных для построения доходности по выбранному горизонту.")
             return
 
+        ret_df["ret_pct"] = pd.to_numeric(ret_df["ret_pct"], errors='coerce').round(2)
+
         fig_ret = px.line(
             ret_df,
             x="tradedate",
             y="ret_pct",
             color="label",
             markers=True,
-            custom_data=["fund", "isin", "close", "base_date_str", "base_close"],
+            custom_data=["fund", "isin", "close", "base_date_str", "base_close", "ret_pct"],
             labels={"ret_pct": "Доходность, %", "tradedate": "Дата"},
             title=None,
         )
@@ -608,7 +610,7 @@ if section == "Доходность":
                 "Фонд: %{customdata[0]}<br>"
                 "Цена закрытия: %{customdata[2]:,.0f}<br>" 
                 "Базовая дата: %{customdata[3]}<br>"
-                "Накопленная доходность: %{y:+.2f}%<br>"
+                "Накопленная доходность:  %{customdata[5]:+.2f}%<br>"
                 f"<extra>{title_suffix}</extra>"
             )
         )
