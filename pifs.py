@@ -266,6 +266,9 @@ def load_df_long_history(
 
     all_results = []
 
+    for i, sec_chunk in enumerate(chunk_list(secids, chunk_size), start=1):
+        inst = list(sec_chunk)
+
         # главное отличие: качаем весь диапазон с адаптивным дроблением на ошибках
         part = _fetch_range_safe(
             token=token,
