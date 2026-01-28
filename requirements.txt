@@ -6,3 +6,6 @@ matplotlib
 python-dateutil
 streamlit==1.53.1
 altair==4.2.2
+feedparser
+beautifulsoup4
+lxml
