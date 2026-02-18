@@ -314,6 +314,7 @@ with st.sidebar:
         "Индексы",
         options=list(INDEX_MAP.keys()),
         default=list(INDEX_MAP.keys()),
+        format_func=lambda x: INDEX_MAP.get(x, x),
     )
 
     # --- Кнопка-переключатель для рядов Акцент ---
@@ -403,7 +404,7 @@ if not frames:
 # --- базовыи набор: индексы ---
 idx_df = pd.concat(frames, ignore_index=True)
 idx_df = idx_df.dropna(subset=["tradedate", "close"]).copy()
-idx_df["label"] = idx_df["secid"]
+idx_df["label"] = idx_df["secid"].map(lambda s: INDEX_MAP.get(s, s))
 
 series_df_raw = idx_df[["secid", "label", "tradedate", "close"]].copy()
 
@@ -458,7 +459,7 @@ fig.update_yaxes(tickformat="+.2f", ticksuffix="%")
 fig.update_traces(
     hovertemplate=(
         "Дата: %{x|%Y-%m-%d}<br>"
-        "Индекс: %{customdata[0]}<br>"
+        "Индекс: %{fullData.name}<br>"
         "Значение: %{customdata[1]:,.2f}<br>"
         "Изменение: %{customdata[2]:+.2f}%<br>"
         "<extra></extra>"
@@ -489,11 +490,18 @@ else:
     summary["result_pct"] = summary["last_pct"]
 
 summary = summary.sort_values("result_pct", ascending=False, na_position="last")
+secid_to_label = (
+    series_df[["secid", "label"]]
+    .drop_duplicates("secid")
+    .set_index("secid")["label"]
+    .to_dict()
+)
 
 disp = summary.copy()
 disp["base_close"] = disp["base_close"].map(lambda x: "—" if pd.isna(x) else f"{x:,.2f}".replace(",", " "))
 disp["last_close"] = disp["last_close"].map(lambda x: "—" if pd.isna(x) else f"{x:,.2f}".replace(",", " "))
 disp["result_pct"] = disp["result_pct"].map(lambda x: "—" if pd.isna(x) else f"{x:+.2f}%")
+disp["secid"] = disp["secid"].map(lambda x: secid_to_label.get(x, x))
 
 disp = disp.rename(
     columns={
