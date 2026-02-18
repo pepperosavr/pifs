@@ -29,7 +29,7 @@ st.title("Индексы Московской биржи: процентное �
 ISS_BASE = "https://iss.moex.com/iss"
 
 INDEX_MAP: Dict[str, str] = {
-    "RGBI": "RGBI",
+    "RGBI": "RGBI (Индекс Мосбиржи государственных облигаций ценовой)",
     "RGBITR": "RGBITR",
     "RUCBCPNS": "RUCBCPNS",
     "RUCBTRNS": "RUCBTRNS",
