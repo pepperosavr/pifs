@@ -14,6 +14,15 @@ import plotly.express as px
 from datetime import datetime, timezone, date
 from pathlib import Path
 
+def _sum_or_single(s: pd.Series, decimals: int = 0) -> float:
+    x = pd.to_numeric(s, errors="coerce").dropna()
+    if x.empty:
+        return np.nan
+    xr = x.round(decimals)
+    if xr.nunique() == 1:
+        return float(x.iloc[0])   # одинаковые значения -> это дубль
+    return float(x.sum())   
+
 # -----------------------
 # Конфигурация
 # -----------------------
@@ -196,6 +205,22 @@ def load_df(secids: list[str], date_from: str, date_to: str) -> pd.DataFrame:
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
 
+    # --- схлопываем возможные дубли дневных строк по (isin, tradedate) ---
+    df = (
+        df.sort_values(["isin", "tradedate", "secid"])
+          .groupby(["isin", "tradedate"], as_index=False)
+          .agg(
+              shortname=("shortname", "last"),
+              secid=("secid", "last"),
+              open=("open", "last"),
+              close=("close", "last"),
+              waprice=("waprice", "last"),
+              volume=("volume", lambda s: _sum_or_single(s, 0)),
+              value=("value", lambda s: _sum_or_single(s, 0)),
+              numtrades=("numtrades", lambda s: _sum_or_single(s, 0)),
+          )
+    )
+
     # имя фонда 
     df["fund"] = df["isin"].map(FUND_MAP).fillna(df["shortname"].astype(str))
 
@@ -318,6 +343,22 @@ def load_df_long_history(
 
     df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
     df = df.dropna(subset=["isin", "tradedate"])
+
+    # --- схлопываем возможные дубли дневных строк по (isin, tradedate) ---
+    df = (
+        df.sort_values(["isin", "tradedate", "secid"])
+          .groupby(["isin", "tradedate"], as_index=False)
+          .agg(
+              shortname=("shortname", "last"),
+              secid=("secid", "last"),
+              open=("open", "last"),
+              close=("close", "last"),
+              waprice=("waprice", "last"),
+              volume=("volume", lambda s: _sum_or_single(s, 0)),
+              value=("value", lambda s: _sum_or_single(s, 0)),
+              numtrades=("numtrades", lambda s: _sum_or_single(s, 0)),
+          )
+    )
 
     df["fund"] = df["isin"].map(FUND_MAP).fillna(df["shortname"].astype(str))
     return df
