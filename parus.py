@@ -307,10 +307,6 @@ c1.metric("Строк (сырых)", f"{len(df_raw):,}".replace(",", " "))
 c2.metric("Дат", f"{df_raw['tradedate'].nunique():,}".replace(",", " "))
 c3.metric("Есть дубли по дню", "да" if has_dups else "нет")
 
-if show_raw:
-    st.subheader("Сырые строки (как вернул API)")
-    st.dataframe(df_raw.sort_values(["tradedate", "fund"]), use_container_width=True, hide_index=True)
-
 accent_daily = build_accent_daily_table(df_raw)
 
 st.subheader("Дневная таблица (1 строка на день на фонд)")
