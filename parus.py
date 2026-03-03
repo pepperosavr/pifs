@@ -294,7 +294,6 @@ if accent_daily.empty:
     st.warning("Не удалось построить дневную таблицу (проверьте период и данные API).")
     st.stop()
 
-st.subheader("Дневная таблица (1 строка на день на фонд)")
 st.dataframe(accent_daily, use_container_width=True, hide_index=True)
 
 csv_bytes = accent_daily.to_csv(index=False, encoding="utf-8").encode("utf-8")
@@ -305,5 +304,3 @@ st.download_button(
     mime="text/csv",
     use_container_width=True,
 )
-
-st.caption("Поля: volume (шт), Open/High/Low/Close, рубли через waprice, рубли через close, value от API (контроль), numtrades.")
