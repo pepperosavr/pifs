@@ -14,7 +14,7 @@ API_URL = "https://dh2.efir-net.ru/v2"
 ACCENT_IV_ISIN = "RU000A100WZ5"
 ACCENT_5_ISIN  = "RU000A10DQF7"
 
-# Важно: Акцент 5 часто требуется передавать как тикер MOEX
+# Акцент 5 передавать как тикер 
 ISIN_TO_MOEX_CODE = {
     ACCENT_5_ISIN: "XACCSK",
 }
@@ -55,7 +55,7 @@ if not API_LOGIN or not API_PASS:
     st.stop()
 
 # =========================
-# Утилиты агрегации дублеи
+# Утилиты агрегации дублей
 # =========================
 def _sum_or_single(s: pd.Series, decimals: int = 0) -> float:
     """
@@ -173,7 +173,6 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
 
     raw = pd.DataFrame(rows)
 
-    # Гарантируем колонки, которые будем использовать
     need_cols = ["shortname", "secid", "isin", "tradedate", "open", "high", "low", "close", "waprice",
                  "volume", "value", "numtrades"]
     for c in need_cols:
@@ -181,8 +180,7 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
             raw[c] = np.nan
 
     df = raw[need_cols].copy()
-
-    # Восстановление ISIN: если isin пустои -> берем secid; если secid = тикер -> маппим в ISIN
+    
     df["isin"] = df["isin"].replace(["", "nan", "None"], np.nan)
     df["secid"] = df["secid"].replace(["", "nan", "None"], np.nan)
 
@@ -197,7 +195,7 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
     df = df.dropna(subset=["isin", "tradedate"])
     df = df[df["isin"].isin(ACCENT_TARGET_ISINS)].copy()
 
-    # Названия фондов
+    # Названия
     fund_map = {
         ACCENT_IV_ISIN: "АКЦЕНТ IV",
         ACCENT_5_ISIN: "Акцент 5",
@@ -208,7 +206,7 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
 
 def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
     """
-    Делает 1 строку на день на фонд с учетом дублеи (например, сессии).
+    Делает 1 строку на день на фонд с учетом дублей (например, сессии).
     """
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
@@ -244,7 +242,7 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
             "Средняя цена (waprice)": wap,
             "Рубли (volume*waprice)": rub_wap,
             "Рубли (close*volume)": rub_close,
-            "Рубли API (value)": val_api,
+            "Рубли как в API (value)": val_api,
             "Сделок, шт": trades,
         })
 
@@ -259,7 +257,7 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
     # Округления для читабельности
     for c in ["Open", "High", "Low", "Close", "Средняя цена (waprice)"]:
         out[c] = out[c].round(2)
-    for c in ["Рубли (volume*waprice)", "Рубли (close*volume)", "Рубли API (value)"]:
+    for c in ["Рубли (volume*waprice)", "Рубли (close*volume)", "Рубли как в API (value)"]:
         out[c] = out[c].round(0)
 
     return out
@@ -276,18 +274,16 @@ with st.sidebar:
     d_from = st.date_input("Начало", value=default_from, min_value=date(2010, 1, 1))
     d_to   = st.date_input("Конец", value=today, min_value=date(2010, 1, 1))
 
-    st.caption("Если приложение начинает тормозить, уменьшите период.")
+    st.caption("Если приложение загружается слишком медленно, уменьшите период.")
 
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Очистить кеш", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-    with col2:
-        show_raw = st.checkbox("Показать сырые строки", value=False)
 
 if d_from > d_to:
-    st.error("Некорректныи период: начало позже конца.")
+    st.error("Некорректный период: начало позже конца.")
     st.stop()
 
 # =========================
