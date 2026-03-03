@@ -271,7 +271,7 @@ with st.sidebar:
 
     if st.button("Очистить кеш", use_container_width=True):
         st.cache_data.clear()
-        st.rerun()
+        _rerun()
 
 if d_from > d_to:
     st.error("Некорректный период: начало позже конца.")
@@ -300,14 +300,12 @@ from io import BytesIO
 
 def df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Accent_IV_5") -> bytes:
     buf = BytesIO()
-    # openpyxl обычно уже есть у Streamlit Cloud; если нет — добавьте openpyxl в requirements
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name=sheet_name)
-
-        # чуть приятнее вид: заморозка шапки + автоширина колонок
         ws = writer.sheets[sheet_name]
         ws.freeze_panes = "A2"
 
+        # автоширина колонок
         for col_cells in ws.columns:
             max_len = 0
             col_letter = col_cells[0].column_letter
@@ -316,14 +314,29 @@ def df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Accent_IV_5") -> bytes
                 max_len = max(max_len, len(v))
             ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
 
-    return buf.getvalue()
+    buf.seek(0)
+    return buf.read()
 
-xlsx_bytes = df_to_xlsx_bytes(accent_daily)
+# --- кнопки выгрузки ---
+try:
+    import openpyxl  # noqa: F401
 
-st.download_button(
-    "Скачать Excel (.xlsx)",
-    data=xlsx_bytes,
-    file_name="accent_iv_5_daily.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    use_container_width=True,
-)
+    xlsx_bytes = df_to_xlsx_bytes(accent_daily)
+    st.download_button(
+        "Скачать Excel (.xlsx)",
+        data=xlsx_bytes,
+        file_name="accent_iv_5_daily.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+except Exception as e:
+    st.warning(f"Excel выгрузка недоступна (проверь openpyxl). Ошибка: {e}")
+
+    csv_bytes = accent_daily.to_csv(index=False, encoding="utf-8").encode("utf-8")
+    st.download_button(
+        "Скачать CSV (fallback)",
+        data=csv_bytes,
+        file_name="accent_iv_5_daily.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
