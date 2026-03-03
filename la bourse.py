@@ -12,13 +12,30 @@ import os
 # -----------------------
 API_URL = "https://dh2.efir-net.ru/v2"
 
+# =========================
+# Secrets / Env
+# =========================
 def get_secret(name: str, default: str = "") -> str:
-    if hasattr(st, "secrets") and name in st.secrets:
-        return str(st.secrets[name])
-    return os.getenv(name, default)
+    # 1) Streamlit secrets
+    try:
+        if hasattr(st, "secrets") and name in st.secrets:
+            v = st.secrets.get(name)
+            if v is not None and str(v).strip() != "":
+                return str(v)
+    except Exception:
+        pass
+    # 2) Env
+    v = os.getenv(name)
+    if v is not None and str(v).strip() != "":
+        return str(v)
+    return default
 
-API_LOGIN = get_secret("API_LOGIN", "accentam-api1")
-API_PASS  = get_secret("API_PASS",  "653Bsw")
+API_LOGIN = get_secret("API_LOGIN", "")
+API_PASS  = get_secret("API_PASS", "")
+
+if not API_LOGIN or not API_PASS:
+    st.error("Не заданы API_LOGIN / API_PASS. Добавьте их в Secrets или переменные окружения.")
+    st.stop()
 
 # =========================
 # Настройки приложения
