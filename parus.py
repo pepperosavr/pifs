@@ -152,57 +152,59 @@ def fetch_moex_history(
 def _to_api_dt(d: date, end_of_day: bool) -> str:
     return f"{d:%Y-%m-%d}T23:59:59Z" if end_of_day else f"{d:%Y-%m-%d}T00:00:00Z"
 
-@st.cache_data(ttl=6 * 60 * 60, show_spinner=False)
-def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
+@st.cache_data(ttl=24 * 60 * 60)
+def load_accent_daily(d_from: str, d_to: str) -> pd.DataFrame:
     """
-    Грузит сырые строки из API по Акцент IV/5.
+    Возвращает ТОЛЬКО дневную таблицу (1 строка на isin+tradedate),
+    уже без дублеи и готовую для UI/расчетов.
     """
     token = get_token(API_LOGIN, API_PASS)
-    date_from = _to_api_dt(d_from, end_of_day=False)
-    date_to   = _to_api_dt(d_to, end_of_day=True)
+    if not token:
+        raise RuntimeError("Ошибка авторизации: не удалось получить токен")
 
-    rows = fetch_moex_history(
+    # 1) качаем (внутри функции сырье существует, но наружу не отдаём)
+    all_rows = fetch_all_trading_results(
         token=token,
-        instruments=ACCENT_INSTRUMENTS_FOR_API,
-        date_from=date_from,
-        date_to=date_to,
+        instruments=["RU000A100WZ5", "XACCSK"],   # Акцент IV + Акцент 5 (тикер)
+        date_from=d_from,
+        date_to=d_to,
         page_size=100,
     )
-    if not rows:
+    if not all_rows:
         return pd.DataFrame()
 
-    raw = pd.DataFrame(rows)
+    raw = pd.DataFrame(all_rows)
 
-    need_cols = ["shortname", "secid", "isin", "tradedate", "open", "high", "low", "close", "waprice",
-                 "volume", "value", "numtrades"]
-    for c in need_cols:
+    # 2) гарантируем колонки
+    need = ["shortname","secid","isin","tradedate","open","high","low","close","waprice","volume","value","numtrades"]
+    for c in need:
         if c not in raw.columns:
             raw[c] = np.nan
 
-    df = raw[need_cols].copy()
-    
-    df["isin"] = df["isin"].replace(["", "nan", "None"], np.nan)
-    df["secid"] = df["secid"].replace(["", "nan", "None"], np.nan)
+    # 3) нормализация типов
+    raw["tradedate"] = pd.to_datetime(raw["tradedate"], errors="coerce", utc=True).dt.date
+    for c in ["open","high","low","close","waprice","volume","value","numtrades"]:
+        raw[c] = pd.to_numeric(raw[c], errors="coerce")
 
-    df["isin"] = df["isin"].fillna(df["secid"])
-    df["isin"] = df["isin"].replace(MOEX_CODE_TO_ISIN)
+    # 4) восстановление ISIN для XACCSK
+    raw["isin"] = raw["isin"].replace({"XACCSK": "RU000A10DQF7"})
+    raw["isin"] = raw["isin"].fillna(raw["secid"].replace({"XACCSK": "RU000A10DQF7"}))
 
-    # Типы
-    df["tradedate"] = pd.to_datetime(df["tradedate"], errors="coerce", utc=True).dt.date
-    for c in ["open", "high", "low", "close", "waprice", "volume", "value", "numtrades"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+    # 5) фильтр только 2 фондов
+    raw = raw[raw["isin"].isin(["RU000A100WZ5", "RU000A10DQF7"])].dropna(subset=["isin","tradedate"])
+    if raw.empty:
+        return pd.DataFrame()
 
-    df = df.dropna(subset=["isin", "tradedate"])
-    df = df[df["isin"].isin(ACCENT_TARGET_ISINS)].copy()
+    # 6) схлопываем дубли по дню
+    day = collapse_day_duplicates(raw)
 
-    # Названия
-    fund_map = {
-        ACCENT_IV_ISIN: "АКЦЕНТ IV",
-        ACCENT_5_ISIN: "Акцент 5",
-    }
-    df["fund"] = df["isin"].map(fund_map).fillna(df["shortname"].astype(str))
+    # 7) приводим названия
+    day["fund"] = day["isin"].map({
+        "RU000A100WZ5": "АКЦЕНТ IV",
+        "RU000A10DQF7": "Акцент 5",
+    }).fillna(day.get("fund"))
 
-    return df
+    return day
 
 def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
     """
