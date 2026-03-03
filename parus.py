@@ -285,33 +285,6 @@ if df_raw.empty:
     st.warning("Нет данных в выбранном диапазоне.")
     st.stop()
 
-# Диагностика дублеи (без вывода сырых строк)
-dup_stat = df_raw.groupby(["isin", "tradedate"]).size().reset_index(name="rows")
-has_dups = bool((dup_stat["rows"] > 1).any())
-dup_days = int((dup_stat["rows"] > 1).sum())
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Строк (сырых)", f"{len(df_raw):,}".replace(",", " "))
-c2.metric("Дат", f"{df_raw['tradedate'].nunique():,}".replace(",", " "))
-c3.metric("Днеи с дублями", f"{dup_days:,}".replace(",", " "))
-c4.metric("Есть дубли", "да" if has_dups else "нет")
-
-accent_daily = build_accent_daily_table(df_raw)
-
-# Диагностика дублеи ПОСЛЕ схлопывания (в итоговои таблице)
-dup_after = (
-    accent_daily.groupby(["ISIN", "Дата"])
-    .size()
-    .reset_index(name="rows")
-)
-has_dups_after = bool((dup_after["rows"] > 1).any())
-dup_days_after = int((dup_after["rows"] > 1).sum())
-
-c1, c2, c3 = st.columns(3)
-c1.metric("Днеи с дублями (raw)", f"{dup_days:,}".replace(",", " "))
-c2.metric("Днеи с дублями (после схлопывания)", f"{dup_days_after:,}".replace(",", " "))
-c3.metric("Дубли устранены", "да" if not has_dups_after else "нет")
-
 st.subheader("Дневная таблица (1 строка на день на фонд)")
 st.dataframe(accent_daily, use_container_width=True, hide_index=True)
 
