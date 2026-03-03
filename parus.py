@@ -196,8 +196,9 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
     return raw
 
 # =========================
-# Схлопывание дублеи -> дневная таблица
+# Схлопывание дублей -> дневная таблица
 # =========================
+
 def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
     """
     1 строка на (Дата, ISIN, Фонд).
@@ -259,6 +260,7 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
 # =========================
 # UI: параметры
 # =========================
+
 with st.sidebar:
     st.header("Параметры")
     today = date.today()
@@ -278,11 +280,18 @@ if d_from > d_to:
 # =========================
 # Загрузка и расчет
 # =========================
+
 with st.spinner("Загружаю данные из API..."):
     df_raw = load_accent_raw(d_from, d_to)
 
 if df_raw.empty:
     st.warning("Нет данных в выбранном диапазоне.")
+    st.stop()
+
+accent_daily = build_accent_daily_table(df_raw)
+
+if accent_daily.empty:
+    st.warning("Не удалось построить дневную таблицу (проверьте период и данные API).")
     st.stop()
 
 st.subheader("Дневная таблица (1 строка на день на фонд)")
