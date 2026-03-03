@@ -3,8 +3,8 @@ import requests
 import numpy as np
 import pandas as pd
 import streamlit as st
-from datetime import date, datetime, timezone
-from typing import Optional, Dict, Any, List, Tuple
+from datetime import date
+from typing import Optional, Dict, Any, List
 
 # =========================
 # Конфигурация
@@ -14,17 +14,17 @@ API_URL = "https://dh2.efir-net.ru/v2"
 ACCENT_IV_ISIN = "RU000A100WZ5"
 ACCENT_5_ISIN  = "RU000A10DQF7"
 
-# Акцент 5 передавать как тикер 
-ISIN_TO_MOEX_CODE = {
-    ACCENT_5_ISIN: "XACCSK",
-}
+# Акцент 5 слать тикером
+ISIN_TO_MOEX_CODE = {ACCENT_5_ISIN: "XACCSK"}
 MOEX_CODE_TO_ISIN = {v: k for k, v in ISIN_TO_MOEX_CODE.items()}
 
 ACCENT_TARGET_ISINS = [ACCENT_IV_ISIN, ACCENT_5_ISIN]
-ACCENT_INSTRUMENTS_FOR_API = [
-    ACCENT_IV_ISIN,                 # Акцент IV можно слать ISIN
-    ISIN_TO_MOEX_CODE[ACCENT_5_ISIN] # Акцент 5 слать тикер
-]
+ACCENT_INSTRUMENTS_FOR_API = [ACCENT_IV_ISIN, ISIN_TO_MOEX_CODE[ACCENT_5_ISIN]]
+
+FUND_NAME_BY_ISIN = {
+    ACCENT_IV_ISIN: "АКЦЕНТ IV",
+    ACCENT_5_ISIN: "Акцент 5",
+}
 
 st.set_page_config(page_title="Акцент IV/5: дневные торги", layout="wide")
 st.title("Таблица торгов по дням: Акцент IV и Акцент 5")
@@ -55,11 +55,11 @@ if not API_LOGIN or not API_PASS:
     st.stop()
 
 # =========================
-# Утилиты агрегации дублей
+# Утилиты агрегации дублеи
 # =========================
 def _sum_or_single(s: pd.Series, decimals: int = 0) -> float:
     """
-    Если значения одинаковые (после округления) -> считаем, что это дубль и берем одно.
+    Если значения одинаковые (после округления) -> считаем дублем и берем одно.
     Иначе -> суммируем.
     """
     x = pd.to_numeric(s, errors="coerce").dropna()
@@ -91,7 +91,7 @@ def _vwap(waprice: pd.Series, volume: pd.Series) -> float:
 # =========================
 # API: auth + history
 # =========================
-def do_post_request(url: str, body: Dict[str, Any], token: Optional[str]) -> Optional[Any]:
+def do_post_request(url: str, body: Dict[str, Any], token: Optional[str]) -> Any:
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -152,22 +152,21 @@ def fetch_moex_history(
 def _to_api_dt(d: date, end_of_day: bool) -> str:
     return f"{d:%Y-%m-%d}T23:59:59Z" if end_of_day else f"{d:%Y-%m-%d}T00:00:00Z"
 
+# =========================
+# Загрузка сырых данных (но не показываем их таблицеи)
+# =========================
 @st.cache_data(ttl=24 * 60 * 60)
-def load_accent_daily(d_from: str, d_to: str) -> pd.DataFrame:
-    """
-    Возвращает ТОЛЬКО дневную таблицу (1 строка на isin+tradedate),
-    уже без дублеи и готовую для UI/расчетов.
-    """
+def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
     token = get_token(API_LOGIN, API_PASS)
-    if not token:
-        raise RuntimeError("Ошибка авторизации: не удалось получить токен")
 
-    # 1) качаем (внутри функции сырье существует, но наружу не отдаём)
-    all_rows = fetch_all_trading_results(
+    date_from = _to_api_dt(d_from, end_of_day=False)
+    date_to   = _to_api_dt(d_to, end_of_day=True)
+
+    all_rows = fetch_moex_history(
         token=token,
-        instruments=["RU000A100WZ5", "XACCSK"],   # Акцент IV + Акцент 5 (тикер)
-        date_from=d_from,
-        date_to=d_to,
+        instruments=ACCENT_INSTRUMENTS_FOR_API,
+        date_from=date_from,
+        date_to=date_to,
         page_size=100,
     )
     if not all_rows:
@@ -175,40 +174,34 @@ def load_accent_daily(d_from: str, d_to: str) -> pd.DataFrame:
 
     raw = pd.DataFrame(all_rows)
 
-    # 2) гарантируем колонки
     need = ["shortname","secid","isin","tradedate","open","high","low","close","waprice","volume","value","numtrades"]
     for c in need:
         if c not in raw.columns:
             raw[c] = np.nan
 
-    # 3) нормализация типов
     raw["tradedate"] = pd.to_datetime(raw["tradedate"], errors="coerce", utc=True).dt.date
     for c in ["open","high","low","close","waprice","volume","value","numtrades"]:
         raw[c] = pd.to_numeric(raw[c], errors="coerce")
 
-    # 4) восстановление ISIN для XACCSK
-    raw["isin"] = raw["isin"].replace({"XACCSK": "RU000A10DQF7"})
-    raw["isin"] = raw["isin"].fillna(raw["secid"].replace({"XACCSK": "RU000A10DQF7"}))
+    # восстановление ISIN, если пришел тикер
+    raw["isin"] = raw["isin"].replace(MOEX_CODE_TO_ISIN)
+    raw["isin"] = raw["isin"].fillna(raw["secid"].replace(MOEX_CODE_TO_ISIN))
 
-    # 5) фильтр только 2 фондов
-    raw = raw[raw["isin"].isin(["RU000A100WZ5", "RU000A10DQF7"])].dropna(subset=["isin","tradedate"])
-    if raw.empty:
-        return pd.DataFrame()
+    raw = raw.dropna(subset=["isin","tradedate"])
+    raw = raw[raw["isin"].isin(ACCENT_TARGET_ISINS)].copy()
 
-    # 6) схлопываем дубли по дню
-    day = collapse_day_duplicates(raw)
+    # гарантируем fund до любых groupby
+    raw["fund"] = raw["isin"].map(FUND_NAME_BY_ISIN).fillna(raw["shortname"].astype(str))
 
-    # 7) приводим названия
-    day["fund"] = day["isin"].map({
-        "RU000A100WZ5": "АКЦЕНТ IV",
-        "RU000A10DQF7": "Акцент 5",
-    }).fillna(day.get("fund"))
+    return raw
 
-    return day
-
+# =========================
+# Схлопывание дублеи -> дневная таблица
+# =========================
 def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
     """
-    Делает 1 строку на день на фонд с учетом дублей (например, сессии).
+    1 строка на (Дата, ISIN, Фонд).
+    Дубли по дню (например, разные сессии) схлопываются.
     """
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
@@ -217,7 +210,7 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
     d = d.sort_values(["isin", "tradedate", "secid"], na_position="last")
 
     def _agg(g: pd.DataFrame) -> pd.Series:
-        vol = _sum_or_single(g["volume"], decimals=0)
+        vol    = _sum_or_single(g["volume"], decimals=0)
         val_api = _sum_or_single(g["value"], decimals=0)
         trades = _sum_or_single(g["numtrades"], decimals=0)
 
@@ -228,11 +221,10 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
         low_  = pd.to_numeric(g["low"], errors="coerce").min(skipna=True)
 
         wap = _vwap(g["waprice"], g["volume"])
-        # fallback, если VWAP не собрался
         if pd.isna(wap):
             wap = _last_non_na(g["waprice"])
 
-        rub_wap = float(vol * wap) if pd.notna(vol) and pd.notna(wap) else np.nan
+        rub_wap   = float(vol * wap) if pd.notna(vol) and pd.notna(wap) else np.nan
         rub_close = float(vol * close_) if pd.notna(vol) and pd.notna(close_) else np.nan
 
         return pd.Series({
@@ -256,7 +248,7 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
          .sort_values(["Дата", "Фонд"])
     )
 
-    # Округления для читабельности
+    # Округления
     for c in ["Open", "High", "Low", "Close", "Средняя цена (waprice)"]:
         out[c] = out[c].round(2)
     for c in ["Рубли (volume*waprice)", "Рубли (close*volume)", "Рубли как в API (value)"]:
@@ -269,20 +261,15 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
 # =========================
 with st.sidebar:
     st.header("Параметры")
-
     today = date.today()
     default_from = date(today.year, 1, 1)
 
     d_from = st.date_input("Начало", value=default_from, min_value=date(2010, 1, 1))
     d_to   = st.date_input("Конец", value=today, min_value=date(2010, 1, 1))
 
-    st.caption("Если приложение загружается слишком медленно, уменьшите период.")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Очистить кеш", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+    if st.button("Очистить кеш", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
 if d_from > d_to:
     st.error("Некорректный период: начало позже конца.")
@@ -298,16 +285,16 @@ if df_raw.empty:
     st.warning("Нет данных в выбранном диапазоне.")
     st.stop()
 
-# Диагностика: есть ли дубли на (isin, tradedate)
-dup_cnt = (
-    df_raw.groupby(["isin", "tradedate"]).size().reset_index(name="rows")
-)
-has_dups = (dup_cnt["rows"] > 1).any()
+# Диагностика дублеи (без вывода сырых строк)
+dup_stat = df_raw.groupby(["isin", "tradedate"]).size().reset_index(name="rows")
+has_dups = bool((dup_stat["rows"] > 1).any())
+dup_days = int((dup_stat["rows"] > 1).sum())
 
-c1, c2, c3 = st.columns(3)
+c1, c2, c3, c4 = st.columns(4)
 c1.metric("Строк (сырых)", f"{len(df_raw):,}".replace(",", " "))
 c2.metric("Дат", f"{df_raw['tradedate'].nunique():,}".replace(",", " "))
-c3.metric("Есть дубли по дню", "да" if has_dups else "нет")
+c3.metric("Днеи с дублями", f"{dup_days:,}".replace(",", " "))
+c4.metric("Есть дубли", "да" if has_dups else "нет")
 
 accent_daily = build_accent_daily_table(df_raw)
 
