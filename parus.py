@@ -126,7 +126,7 @@ def fetch_moex_history(
         body = {
             "engine": "stock",
             "market": "shares",
-            "boardid": ["TQIF", "PTEQ", "PSRP"],
+            "boardid": ["TQIF", "PTIF"],
             "instruments": instruments,
             "dateFrom": date_from,
             "dateTo": date_to,
