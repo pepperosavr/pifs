@@ -126,7 +126,7 @@ def fetch_moex_history(
         body = {
             "engine": "stock",
             "market": "shares",
-            "boardid": ["TQIF", "PTIF"],
+            "boardid": ["TQIF", "PUIF", "SUIF", "PTEQ"],
             "instruments": instruments,
             "dateFrom": date_from,
             "dateTo": date_to,
@@ -197,7 +197,9 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
     def mark_mode(board):
         if board == "TQIF":
             return "Основной режим (TQIF)"
-        return "РПС"
+        if board in ["PUIF", "SUIF", "PTEQ"]:
+            return "РПС"
+        return f"Прочие ({board})"
 
     raw["mode"] = raw["boardid"].apply(mark_mode)
 
