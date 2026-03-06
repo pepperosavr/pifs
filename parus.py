@@ -2,6 +2,7 @@ import os
 import requests
 import numpy as np
 import pandas as pd
+import openpyxl 
 import streamlit as st
 from datetime import date
 from typing import Optional, Dict, Any, List
@@ -251,7 +252,7 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
     out = (
         d.groupby(["tradedate", "isin", "fund"], as_index=False)
          .apply(_agg, include_groups=False)
-         .reset_index(drop=True)
+         .reset_index()
          .rename(columns={"tradedate": "Дата", "isin": "ISIN", "fund": "Фонд"})
          .sort_values(["Дата", "Фонд"])
     )
@@ -357,6 +358,7 @@ from io import BytesIO
 def df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Accent_IV_5") -> bytes:
     buf = BytesIO()
     try:
+        import openpyxl 
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name=sheet_name)
             ws = writer.sheets[sheet_name]
@@ -376,7 +378,6 @@ def df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Accent_IV_5") -> bytes
 st.divider()
 
 try:
-    import openpyxl 
     xlsx_bytes = df_to_xlsx_bytes(accent_daily)
     st.download_button(
         "Скачать Excel (.xlsx)",
