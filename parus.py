@@ -125,7 +125,7 @@ def fetch_moex_history(
         body = {
             "engine": "stock",
             "market": "shares",
-            "boardid": ["TQIF"],
+            "boardid": ["TQIF", "PTEQ", "PSRP"],
             "instruments": instruments,
             "dateFrom": date_from,
             "dateTo": date_to,
@@ -174,7 +174,7 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
 
     raw = pd.DataFrame(all_rows)
 
-    need = ["shortname","secid","isin","tradedate","open","high","low","close","waprice","volume","value","numtrades"]
+    need = ["shortname","secid","isin","tradedate","open","high","low","close","waprice","volume","value","numtrades", "boardid"]
     for c in need:
         if c not in raw.columns:
             raw[c] = np.nan
@@ -192,6 +192,13 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
 
     # гарантируем fund до любых groupby
     raw["fund"] = raw["isin"].map(FUND_NAME_BY_ISIN).fillna(raw["shortname"].astype(str))
+
+    def mark_mode(board):
+        if board == "TQIF":
+            return "Основной режим (TQIF)"
+        return "РПС"
+
+    raw["mode"] = raw["boardid"].apply(mark_mode)
 
     return raw
 
@@ -257,6 +264,33 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
 
     return out
 
+def build_weekly_summary(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Создает таблицу итогов за неделю по фондам и режимам торгов.
+    """
+    if df_raw is None or df_raw.empty:
+        return pd.DataFrame()
+    
+    d = df_raw.copy()
+    # Превращаем дату в начало недели (понедельник)
+    d['tradedate'] = pd.to_datetime(d['tradedate'])
+    d['Неделя'] = d['tradedate'].dt.to_period('W').apply(lambda r: r.start_time.date())
+    
+    # Группируем по Неделе, Фонду и Режиму торгов (TQIF vs РПС)
+    summary = d.groupby(['Неделя', 'fund', 'mode']).agg({
+        'volume': 'sum',
+        'value': 'sum',
+        'numtrades': 'sum'
+    }).reset_index()
+
+    # Названия колонок для отображения
+    summary.columns = ['Неделя (пн)', 'Фонд', 'Режим торгов', 'Кол-во бумаг, шт', 'Оборот, руб', 'Сделок, шт']
+    
+    # Сортировка: новые недели сверху
+    summary = summary.sort_values(['Неделя (пн)', 'Фонд'], ascending=[False, True])
+    
+    return summary
+
 # =========================
 # UI: параметры
 # =========================
@@ -266,12 +300,12 @@ with st.sidebar:
     today = date.today()
     default_from = date(today.year, 1, 1)
 
-    d_from = st.date_input("Начало", value=default_from, min_value=date(2010, 1, 1))
-    d_to   = st.date_input("Конец", value=today, min_value=date(2010, 1, 1))
+    d_from = st.date_input("Начало", value=default_from)
+    d_to   = st.date_input("Конец", value=today)
 
     if st.button("Очистить кеш", use_container_width=True):
         st.cache_data.clear()
-        _rerun()
+        st.rerun()  # Исправлено: st.rerun вместо _rerun
 
 if d_from > d_to:
     st.error("Некорректный период: начало позже конца.")
@@ -282,61 +316,76 @@ if d_from > d_to:
 # =========================
 
 with st.spinner("Загружаю данные из API..."):
+    # Загружаем ОДИН раз
     df_raw = load_accent_raw(d_from, d_to)
 
 if df_raw.empty:
     st.warning("Нет данных в выбранном диапазоне.")
     st.stop()
 
+# 1. Таблица итогов за неделю (С разделением по режимам РПС/TQIF)
+st.subheader("Итоги за неделю: Основной режим vs РПС")
+weekly_df = build_weekly_summary(df_raw)
+
+if not weekly_df.empty:
+    st.dataframe(
+        weekly_df.style.format({
+            "Кол-во бумаг, шт": "{:,.0f}",
+            "Оборот, руб": "{:,.2f}",
+            "Сделок, шт": "{:,.0f}"
+        }),
+        use_container_width=True,
+
+        hide_index=True
+    )
+
+# 2. Детальная дневная таблица (Агрегированная по дням)
+st.subheader("Детальные торги по дням (сумма всех режимов)")
 accent_daily = build_accent_daily_table(df_raw)
 
-if accent_daily.empty:
-    st.warning("Не удалось построить дневную таблицу (проверьте период и данные API).")
-    st.stop()
+if not accent_daily.empty:
+    st.dataframe(accent_daily, use_container_width=True, hide_index=True)
+else:
+    st.warning("Не удалось построить детальную таблицу.")
 
-st.dataframe(accent_daily, use_container_width=True, hide_index=True)
+# =========================
+# Выгрузка в Excel
+# =========================
 
 from io import BytesIO
 
 def df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Accent_IV_5") -> bytes:
     buf = BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name)
-        ws = writer.sheets[sheet_name]
-        ws.freeze_panes = "A2"
-
-        # автоширина колонок
-        for col_cells in ws.columns:
-            max_len = 0
-            col_letter = col_cells[0].column_letter
-            for cell in col_cells:
-                v = "" if cell.value is None else str(cell.value)
-                max_len = max(max_len, len(v))
-            ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
-
+    try:
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name=sheet_name)
+            ws = writer.sheets[sheet_name]
+            ws.freeze_panes = "A2"
+            for col_cells in ws.columns:
+                max_len = 0
+                col_letter = col_cells[0].column_letter
+                for cell in col_cells:
+                    v = "" if cell.value is None else str(cell.value)
+                    max_len = max(max_len, len(v))
+                ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
+    except Exception as e:
+        st.error(f"Ошибка при создании Excel: {e}")
     buf.seek(0)
     return buf.read()
 
-# --- кнопки выгрузки ---
-try:
-    import openpyxl  # noqa: F401
+st.divider()
 
+try:
+    import openpyxl 
     xlsx_bytes = df_to_xlsx_bytes(accent_daily)
     st.download_button(
         "Скачать Excel (.xlsx)",
         data=xlsx_bytes,
-        file_name="accent_iv_5_daily.xlsx",
+        file_name=f"accent_daily_{d_from}_{d_to}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
 except Exception as e:
-    st.warning(f"Excel выгрузка недоступна (проверь openpyxl). Ошибка: {e}")
-
+    st.warning("Excel выгрузка недоступна.")
     csv_bytes = accent_daily.to_csv(index=False, encoding="utf-8").encode("utf-8")
-    st.download_button(
-        "Скачать CSV (fallback)",
-        data=csv_bytes,
-        file_name="accent_iv_5_daily.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
+    st.download_button("Скачать как CSV", data=csv_bytes, file_name="accent_daily.csv", use_container_width=True)
