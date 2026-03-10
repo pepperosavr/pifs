@@ -126,7 +126,7 @@ def fetch_moex_history(
         body = {
             "engine": "stock",
             "market": "shares",
-            "boardid": ["TQIF", "PUIF", "SUIF", "PTEQ"],
+            "boardid": ["TQIF", "PSIF", "PTIF"],
             "instruments": instruments,
             "dateFrom": date_from,
             "dateTo": date_to,
@@ -197,8 +197,10 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
     def mark_mode(board):
         if board == "TQIF":
             return "Основной режим (TQIF)"
-        if board in ["PUIF", "SUIF", "PTEQ"]:
+        if board == "PSIF":
             return "РПС"
+        if board == "PTIF":
+            return "РПС с ЦК"
         return f"Прочие ({board})"
 
     raw["mode"] = raw["boardid"].apply(mark_mode)
@@ -266,33 +268,33 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
         out[c] = out[c].round(0)
 
     return out
-
+    
 def build_weekly_summary(df_raw: pd.DataFrame) -> pd.DataFrame:
-    """
-    Создает таблицу итогов за неделю по фондам и режимам торгов.
-    """
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
-    
-    d = df_raw.copy()
-    # Превращаем дату в начало недели (понедельник)
-    d['tradedate'] = pd.to_datetime(d['tradedate'])
-    d['Неделя'] = d['tradedate'].dt.to_period('W').apply(lambda r: r.start_time.date())
-    
-    # Группируем по Неделе, Фонду и Режиму торгов (TQIF vs РПС)
-    summary = d.groupby(['Неделя', 'fund', 'mode']).agg({
-        'volume': 'sum',
-        'value': 'sum',
-        'numtrades': 'sum'
-    }).reset_index()
 
-    # Названия колонок для отображения
-    summary.columns = ['Неделя (пн)', 'Фонд', 'Режим торгов', 'Кол-во бумаг, шт', 'Оборот, руб', 'Сделок, шт']
-    
-    # Сортировка: новые недели сверху
-    summary = summary.sort_values(['Неделя (пн)', 'Фонд'], ascending=[False, True])
-    
-    return summary
+    d = df_raw.copy()
+    d["tradedate"] = pd.to_datetime(d["tradedate"])
+    d["Неделя"] = d["tradedate"].dt.to_period("W-MON").apply(lambda r: r.start_time.date())
+
+    grp = (
+        d.groupby(["Неделя", "fund", "mode"], as_index=False)
+         .agg(
+             volume=("volume", "sum"),
+             value=("value", "sum"),
+             numtrades=("numtrades", "sum"),
+         )
+    )
+
+    grp = grp.rename(columns={
+        "fund": "Фонд",
+        "mode": "Режим торгов",
+        "volume": "Кол-во бумаг, шт",
+        "value": "Оборот, руб",
+        "numtrades": "Сделок, шт",
+    })
+
+    return grp.sort_values(["Неделя", "Фонд", "Режим торгов"], ascending=[False, True, True])
 
 # =========================
 # UI: параметры
