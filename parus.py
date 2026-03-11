@@ -413,7 +413,7 @@ def build_weekly_summary(df_raw: pd.DataFrame) -> pd.DataFrame:
         }
     )
 
-    return grp.sort_values(["Неделя", "Фонд", "Режим торгов"], ascending=[False, True, True])
+    return grp.sort_values(["Начало недели", "Фонд", "Режим торгов"], ascending=[False, True, True])
 
 
 # =========================
