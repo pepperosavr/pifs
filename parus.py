@@ -119,24 +119,31 @@ def fetch_moex_history(
 ) -> List[Dict[str, Any]]:
     url = f"{API_URL}/Moex/History"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    
+
     out: List[Dict[str, Any]] = []
 
-    # Настраиваем список рынков и соответствующих им режимов
-    # 1. Основной режим (shares) -> TQIF
-    # 2. РПС (ndm) -> PTEQ, PSRP
-    market_configs = [
-        {"market": "shares", "boards": ["TQIF"]},
-        {"market": "ndm", "boards": ["PTEQ", "PSRP"]}
+    # Два отдельных запроса:
+    # 1) основной режим
+    # 2) РПС
+    requests_plan = [
+        {
+            "market": "shares",
+            "boardid": ["TQIF"],
+            "mode_label": "Основной режим (TQIF)",
+        },
+        {
+            "market": "ndm",
+            "boardid": None,   # важно: не фильтруем boardid для РПС
+            "mode_label": "РПС",
+        },
     ]
 
-    for config in market_configs:
+    for cfg in requests_plan:
         page = 0
         while True:
             body = {
                 "engine": "stock",
-                "market": config["market"],
-                "boardid": config["boards"],
+                "market": cfg["market"],
                 "instruments": instruments,
                 "dateFrom": date_from,
                 "dateTo": date_to,
@@ -144,24 +151,34 @@ def fetch_moex_history(
                 "pageNum": page,
                 "pageSize": page_size,
             }
-            try:
-                r = requests.post(url, json=body, headers=headers, timeout=60)
-                if r.status_code != 200:
-                    # Если какой-то рынок не отдал данные, просто идем дальше
-                    break
 
-                data = r.json()
-                if not data:
-                    break
+            # boardid добавляем только если он реально нужен
+            if cfg["boardid"] is not None:
+                body["boardid"] = cfg["boardid"]
 
-                out.extend(data)
-                
-                if len(data) < page_size:
-                    break
-                page += 1
-            except Exception as e:
-                st.error(f"Ошибка при запросе рынка {config['market']}: {e}")
+            r = requests.post(url, json=body, headers=headers, timeout=60)
+
+            if r.status_code != 200:
+                raise RuntimeError(
+                    f"API error for market={cfg['market']} page={page}: "
+                    f"{r.status_code} {r.text}"
+                )
+
+            data = r.json()
+            if not data:
                 break
+
+            # Сразу помечаем, из какого режима пришли данные
+            for row in data:
+                row["_request_market"] = cfg["market"]
+                row["_mode_label"] = cfg["mode_label"]
+
+            out.extend(data)
+
+            if len(data) < page_size:
+                break
+
+            page += 1
 
     return out
 
@@ -190,7 +207,12 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
 
     raw = pd.DataFrame(all_rows)
 
-    need = ["shortname","secid","isin","tradedate","open","high","low","close","waprice","volume","value","numtrades", "boardid"]
+    need = [
+    "shortname", "secid", "isin", "tradedate",
+    "open", "high", "low", "close", "waprice",
+    "volume", "value", "numtrades",
+    "boardid", "_request_market", "_mode_label"
+    ]
     for c in need:
         if c not in raw.columns:
             raw[c] = np.nan
@@ -209,16 +231,21 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
     # гарантируем fund до любых groupby
     raw["fund"] = raw["isin"].map(FUND_NAME_BY_ISIN).fillna(raw["shortname"].astype(str))
 
-    def mark_mode(board):
-        if board == "TQIF":
-            return "Основной режим (TQIF)"
-        if board == "PSIF":
-            return "РПС"
-        if board == "PTIF":
-            return "РПС с ЦК"
-        return f"Прочие ({board})"
+    def mark_mode(row):
+    # Главный приоритет — тот market, которым мы запросили данные
+    req_market = row.get("_request_market")
+    if req_market == "shares":
+        return "Основной режим (TQIF)"
+    if req_market == "ndm":
+        return "РПС"
 
-    raw["mode"] = raw["boardid"].apply(mark_mode)
+    # fallback, если вдруг служебные поля не пришли
+    board = row.get("boardid")
+    if board == "TQIF":
+        return "Основной режим (TQIF)"
+    return f"Прочие ({board})"
+
+    raw["mode"] = raw.apply(mark_mode, axis=1)
 
     return raw
 
