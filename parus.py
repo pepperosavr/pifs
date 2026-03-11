@@ -447,28 +447,6 @@ if df_raw.empty:
     st.warning("Нет данных в выбранном диапазоне.")
     st.stop()
 
-
-# =========================
-# Диагностика
-# =========================
-with st.expander("Диагностика API", expanded=False):
-    if "_request_market" in df_raw.columns:
-        st.write(
-            "Уникальные _request_market:",
-            sorted([x for x in df_raw["_request_market"].dropna().unique().tolist()]),
-        )
-
-    if "boardid" in df_raw.columns:
-        st.write(
-            "Уникальные boardid:",
-            sorted([str(x) for x in df_raw["boardid"].dropna().unique().tolist()]),
-        )
-
-    if "mode" in df_raw.columns:
-        mode_counts = df_raw.groupby("mode").size().reset_index(name="rows")
-        st.dataframe(mode_counts, use_container_width=True, hide_index=True)
-
-
 # 1. Таблица итогов за неделю
 st.subheader("Итоги за неделю: Основной режим vs РПС")
 weekly_df = build_weekly_summary(df_raw)
