@@ -310,14 +310,12 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
 def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
     """
     1 строка на (Дата, ISIN, Фонд, Режим торгов).
-    Основной режим и РПС НЕ суммируются между собой.
+    Основной режим и РПС не суммируются между собой.
     """
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
 
     d = df_raw.copy()
-
-    # на всякий случай снимаем полные дубли
     d = d.drop_duplicates().copy()
 
     d = d.sort_values(
@@ -343,25 +341,22 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
         rub_wap = float(vol * wap) if pd.notna(vol) and pd.notna(wap) else np.nan
         rub_close = float(vol * close_) if pd.notna(vol) and pd.notna(close_) else np.nan
 
-        return pd.Series(
-            {
-                "Кол-во бумаг, шт": vol,
-                "Open": open_,
-                "High": high_,
-                "Low": low_,
-                "Close": close_,
-                "Средняя цена (waprice)": wap,
-                "Рубли (volume*waprice)": rub_wap,
-                "Рубли (close*volume)": rub_close,
-                "Рубли как в API (value)": val_api,
-                "Сделок, шт": trades,
-            }
-        )
+        return pd.Series({
+            "Кол-во бумаг, шт": vol,
+            "Open": open_,
+            "High": high_,
+            "Low": low_,
+            "Close": close_,
+            "Средняя цена (waprice)": wap,
+            "Рубли (volume*waprice)": rub_wap,
+            "Рубли (close*volume)": rub_close,
+            "Рубли как в API (value)": val_api,
+            "Сделок, шт": trades,
+        })
 
     out = (
         d.groupby(["tradedate", "isin", "fund", "mode"], as_index=False)
         .apply(_agg, include_groups=False)
-        .reset_index()
         .rename(
             columns={
                 "tradedate": "Дата",
@@ -373,6 +368,12 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
         .sort_values(["Дата", "Фонд", "Режим торгов"])
     )
 
+    # если pandas все же создал технические колонки — убираем их
+    out = out.drop(columns=["index", "level_0", "level_1"], errors="ignore")
+
+    # чистый индекс
+    out = out.reset_index(drop=True)
+
     for c in ["Open", "High", "Low", "Close", "Средняя цена (waprice)"]:
         out[c] = out[c].round(2)
 
@@ -380,7 +381,6 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
         out[c] = out[c].round(0)
 
     return out
-
 
 def build_weekly_summary(df_raw: pd.DataFrame) -> pd.DataFrame:
     if df_raw is None or df_raw.empty:
