@@ -475,18 +475,29 @@ accent_daily = build_accent_daily_table(df_raw)
 
 if not accent_daily.empty:
     mode_options = ["Все режимы"] + accent_daily["Режим торгов"].dropna().unique().tolist()
+
     selected_mode = st.radio(
-        "Что показывать в дневной таблице",
+        "Показывать в дневной таблице",
         options=mode_options,
         horizontal=True,
     )
 
     if selected_mode != "Все режимы":
-        accent_daily_show = accent_daily[accent_daily["Режим торгов"] == selected_mode].copy()
+        accent_daily_show = accent_daily[
+            accent_daily["Режим торгов"] == selected_mode
+        ].copy()
     else:
         accent_daily_show = accent_daily.copy()
 
-    st.dataframe(accent_daily_show, use_container_width=True, hide_index=True)
+    # ← ключевая строка
+    accent_daily_show = accent_daily_show.reset_index(drop=True)
+
+    st.dataframe(
+        accent_daily_show,
+        use_container_width=True,
+        hide_index=True
+    )
+
 else:
     st.warning("Не удалось построить детальную таблицу.")
 
