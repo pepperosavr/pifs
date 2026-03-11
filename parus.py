@@ -489,18 +489,19 @@ if not accent_daily.empty:
     else:
         accent_daily_show = accent_daily.copy()
 
-    accent_daily_show.index = pd.RangeIndex(len(accent_daily_show))
-    accent_daily_show.index.name = None
+    accent_daily_show = accent_daily_show.reset_index(drop=True)
 
     st.dataframe(
         accent_daily_show,
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        column_config={
+            "_index": None
+        },
     )
 
 else:
     st.warning("Не удалось построить детальную таблицу.")
-
 
 # =========================
 # Выгрузка в Excel
