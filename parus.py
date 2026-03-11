@@ -489,8 +489,8 @@ if not accent_daily.empty:
     else:
         accent_daily_show = accent_daily.copy()
 
-    # ← ключевая строка
-    accent_daily_show = accent_daily_show.reset_index(drop=True)
+    accent_daily_show.index = pd.RangeIndex(len(accent_daily_show))
+    accent_daily_show.index.name = None
 
     st.dataframe(
         accent_daily_show,
