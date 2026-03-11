@@ -148,7 +148,7 @@ def fetch_moex_history(
         {
             "market": "shares",
             "boardid": ["TQIF"],
-            "mode_label": "Основной режим (TQIF)",
+            "mode_label": "Основной режим",
         },
         {
             "market": "ndm",
@@ -270,13 +270,13 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
         req_market = row.get("_request_market")
 
         if req_market == "shares":
-            return "Основной режим (TQIF)"
+            return "Основной режим"
         if req_market == "ndm":
             return "РПС"
 
         board = row.get("boardid")
         if board == "TQIF":
-            return "Основной режим (TQIF)"
+            return "Основной режим"
 
         return f"Прочие ({board})"
 
