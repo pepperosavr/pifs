@@ -481,6 +481,7 @@ else:
 st.subheader("Детальные торги по дням")
 
 accent_daily = build_accent_daily_table(df_raw_day)
+accent_daily_show = pd.DataFrame()  # важно: создаем заранее
 
 if not accent_daily.empty:
     mode_options = ["Все режимы"] + accent_daily["Режим торгов"].dropna().unique().tolist()
@@ -504,51 +505,71 @@ if not accent_daily.empty:
         accent_daily_show,
         use_container_width=True,
         hide_index=True,
-        column_config={
-            "_index": None
-        },
+        column_config={"_index": None},
     )
-
 else:
     st.warning("Не удалось построить детальную таблицу.")
+
 
 # =========================
 # Выгрузка в Excel
 # =========================
-def df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Accent_IV_5") -> bytes:
+def df_to_xlsx_bytes(
+    weekly_df: pd.DataFrame,
+    daily_df: pd.DataFrame,
+    weekly_sheet_name: str = "Итоги за неделю",
+    daily_sheet_name: str = "Детальные торги",
+) -> bytes:
     buf = BytesIO()
 
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name)
-        ws = writer.sheets[sheet_name]
-        ws.freeze_panes = "A2"
+        weekly_to_save = weekly_df.copy()
+        weekly_to_save.to_excel(writer, index=False, sheet_name=weekly_sheet_name)
 
-        for col_cells in ws.columns:
+        ws1 = writer.sheets[weekly_sheet_name]
+        ws1.freeze_panes = "A2"
+
+        for col_cells in ws1.columns:
             max_len = 0
             col_letter = col_cells[0].column_letter
             for cell in col_cells:
                 v = "" if cell.value is None else str(cell.value)
                 max_len = max(max_len, len(v))
-            ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
+            ws1.column_dimensions[col_letter].width = min(max_len + 2, 60)
+
+        daily_to_save = daily_df.copy()
+        daily_to_save.to_excel(writer, index=False, sheet_name=daily_sheet_name)
+
+        ws2 = writer.sheets[daily_sheet_name]
+        ws2.freeze_panes = "A2"
+
+        for col_cells in ws2.columns:
+            max_len = 0
+            col_letter = col_cells[0].column_letter
+            for cell in col_cells:
+                v = "" if cell.value is None else str(cell.value)
+                max_len = max(max_len, len(v))
+            ws2.column_dimensions[col_letter].width = min(max_len + 2, 60)
 
     buf.seek(0)
     return buf.read()
 
 
-st.divider()
-
 try:
-    xlsx_bytes = df_to_xlsx_bytes(accent_daily)
+    xlsx_bytes = df_to_xlsx_bytes(weekly_df, accent_daily_show)
+
     st.download_button(
         "Скачать Excel (.xlsx)",
         data=xlsx_bytes,
-        file_name=f"accent_daily_{d_from}_{d_to}.xlsx",
+        file_name=f"accent_weekly_daily_{d_from}_{d_to}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
-except Exception:
-    st.warning("Excel выгрузка недоступна.")
-    csv_bytes = accent_daily.to_csv(index=False, encoding="utf-8").encode("utf-8")
+except Exception as e:
+    st.warning(f"Excel выгрузка недоступна: {e}")
+
+    csv_bytes = accent_daily_show.to_csv(index=False, encoding="utf-8").encode("utf-8")
+
     st.download_button(
         "Скачать как CSV",
         data=csv_bytes,
