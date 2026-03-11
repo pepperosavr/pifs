@@ -229,6 +229,7 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
         return pd.DataFrame()
 
     raw = pd.DataFrame(all_rows)
+    raw = raw.drop_duplicates().copy()
 
     need = [
         "shortname",
@@ -281,22 +282,48 @@ def load_accent_raw(d_from: date, d_to: date) -> pd.DataFrame:
 
     raw["mode"] = raw.apply(mark_mode, axis=1)
 
+    raw = raw.drop_duplicates(
+        subset=[
+            "tradedate",
+            "isin",
+            "secid",
+            "boardid",
+            "mode",
+            "open",
+            "high",
+            "low",
+            "close",
+            "waprice",
+            "volume",
+            "value",
+            "numtrades",
+        ]
+    ).copy()
+
     return raw
 
 
 # =========================
 # Схлопывание дублей -> дневная таблица
 # =========================
+
 def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
     """
-    1 строка на (Дата, ISIN, Фонд).
-    Дубли по дню схлопываются.
+    1 строка на (Дата, ISIN, Фонд, Режим торгов).
+    Основной режим и РПС НЕ суммируются между собой.
     """
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
 
     d = df_raw.copy()
-    d = d.sort_values(["isin", "tradedate", "secid"], na_position="last")
+
+    # на всякий случай снимаем полные дубли
+    d = d.drop_duplicates().copy()
+
+    d = d.sort_values(
+        ["isin", "tradedate", "mode", "secid", "boardid"],
+        na_position="last"
+    )
 
     def _agg(g: pd.DataFrame) -> pd.Series:
         vol = _sum_or_single(g["volume"], decimals=0)
@@ -332,11 +359,18 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
         )
 
     out = (
-        d.groupby(["tradedate", "isin", "fund"], as_index=False)
+        d.groupby(["tradedate", "isin", "fund", "mode"], as_index=False)
         .apply(_agg, include_groups=False)
         .reset_index()
-        .rename(columns={"tradedate": "Дата", "isin": "ISIN", "fund": "Фонд"})
-        .sort_values(["Дата", "Фонд"])
+        .rename(
+            columns={
+                "tradedate": "Дата",
+                "isin": "ISIN",
+                "fund": "Фонд",
+                "mode": "Режим торгов",
+            }
+        )
+        .sort_values(["Дата", "Фонд", "Режим торгов"])
     )
 
     for c in ["Open", "High", "Low", "Close", "Средняя цена (waprice)"]:
@@ -456,11 +490,25 @@ else:
 
 
 # 2. Детальная дневная таблица
-st.subheader("Детальные торги по дням (сумма всех режимов)")
+
+st.subheader("Детальные торги по дням")
+
 accent_daily = build_accent_daily_table(df_raw)
 
 if not accent_daily.empty:
-    st.dataframe(accent_daily, use_container_width=True, hide_index=True)
+    mode_options = ["Все режимы"] + accent_daily["Режим торгов"].dropna().unique().tolist()
+    selected_mode = st.radio(
+        "Что показывать в дневной таблице",
+        options=mode_options,
+        horizontal=True,
+    )
+
+    if selected_mode != "Все режимы":
+        accent_daily_show = accent_daily[accent_daily["Режим торгов"] == selected_mode].copy()
+    else:
+        accent_daily_show = accent_daily.copy()
+
+    st.dataframe(accent_daily_show, use_container_width=True, hide_index=True)
 else:
     st.warning("Не удалось построить детальную таблицу.")
 
