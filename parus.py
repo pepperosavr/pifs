@@ -390,12 +390,12 @@ def build_weekly_summary(df_raw: pd.DataFrame) -> pd.DataFrame:
     d["tradedate"] = pd.to_datetime(d["tradedate"])
 
     # дата начала недели = понедельник
-    d["Неделя"] = (
+    d["Начало недели"] = (
         d["tradedate"] - pd.to_timedelta(d["tradedate"].dt.weekday, unit="D")
     ).dt.date
 
     grp = (
-        d.groupby(["Неделя", "fund", "mode"], as_index=False)
+        d.groupby(["Начало недели", "fund", "mode"], as_index=False)
         .agg(
             volume=("volume", "sum"),
             value=("value", "sum"),
@@ -455,9 +455,9 @@ if not weekly_df.empty:
     st.dataframe(
         weekly_df.style.format(
             {
-                "Кол-во бумаг, шт": "{:,.0f}",
-                "Оборот, руб": "{:,.2f}",
-                "Сделок, шт": "{:,.0f}",
+                "Кол-во бумаг, шт": "{:.0f}",
+                "Оборот, руб": "{:.0f}",
+                "Сделок, шт": "{:.0f}",
             }
         ),
         use_container_width=True,
