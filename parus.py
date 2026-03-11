@@ -119,34 +119,49 @@ def fetch_moex_history(
 ) -> List[Dict[str, Any]]:
     url = f"{API_URL}/Moex/History"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-
+    
     out: List[Dict[str, Any]] = []
-    page = 0
-    while True:
-        body = {
-            "engine": "stock",
-            "market": "shares",
-            "boardid": ["TQIF", "PSIF", "PTIF"],
-            "instruments": instruments,
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "tradingSessions": [],
-            "pageNum": page,
-            "pageSize": page_size,
-        }
-        r = requests.post(url, json=body, headers=headers, timeout=60)
-        if r.status_code != 200:
-            raise RuntimeError(f"API error page {page}: {r.status_code} {r.text}")
 
-        data = r.json()
-        if not data:
-            break
+    # Настраиваем список рынков и соответствующих им режимов
+    # 1. Основной режим (shares) -> TQIF
+    # 2. РПС (ndm) -> PTEQ, PSRP
+    market_configs = [
+        {"market": "shares", "boards": ["TQIF"]},
+        {"market": "ndm", "boards": ["PTEQ", "PSRP"]}
+    ]
 
-        out.extend(data)
-        if len(data) < page_size:
-            break
+    for config in market_configs:
+        page = 0
+        while True:
+            body = {
+                "engine": "stock",
+                "market": config["market"],
+                "boardid": config["boards"],
+                "instruments": instruments,
+                "dateFrom": date_from,
+                "dateTo": date_to,
+                "tradingSessions": [],
+                "pageNum": page,
+                "pageSize": page_size,
+            }
+            try:
+                r = requests.post(url, json=body, headers=headers, timeout=60)
+                if r.status_code != 200:
+                    # Если какой-то рынок не отдал данные, просто идем дальше
+                    break
 
-        page += 1
+                data = r.json()
+                if not data:
+                    break
+
+                out.extend(data)
+                
+                if len(data) < page_size:
+                    break
+                page += 1
+            except Exception as e:
+                st.error(f"Ошибка при запросе рынка {config['market']}: {e}")
+                break
 
     return out
 
