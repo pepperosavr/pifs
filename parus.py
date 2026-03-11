@@ -206,6 +206,9 @@ def _to_api_dt(d: date, end_of_day: bool) -> str:
         return f"{d:%Y-%m-%d}T23:59:59Z"
     return f"{d:%Y-%m-%d}T00:00:00Z"
 
+def _week_monday(d: date) -> date:
+    return date.fromordinal(d.toordinal() - d.weekday())
+
 
 # =========================
 # Загрузка сырых данных
@@ -440,16 +443,22 @@ if d_from > d_to:
 # =========================
 # Загрузка и расчет
 # =========================
-with st.spinner("Загружаю данные из API..."):
-    df_raw = load_accent_raw(d_from, d_to)
+week_from = _week_monday(d_from)
 
-if df_raw.empty:
+with st.spinner("Загружаю данные из API..."):
+    # Для недельной таблицы: с понедельника недели, в которую попадает d_from
+    df_raw_week = load_accent_raw(week_from, d_to)
+
+    # Для дневной таблицы: как выбрал пользователь
+    df_raw_day = load_accent_raw(d_from, d_to)
+
+if df_raw_week.empty and df_raw_day.empty:
     st.warning("Нет данных в выбранном диапазоне.")
     st.stop()
 
 # 1. Таблица итогов за неделю
 st.subheader("Итоги за неделю: Основной режим vs РПС")
-weekly_df = build_weekly_summary(df_raw)
+weekly_df = build_weekly_summary(df_raw_week)
 
 if not weekly_df.empty:
     st.dataframe(
@@ -471,7 +480,7 @@ else:
 
 st.subheader("Детальные торги по дням")
 
-accent_daily = build_accent_daily_table(df_raw)
+accent_daily = build_accent_daily_table(df_raw_day)
 
 if not accent_daily.empty:
     mode_options = ["Все режимы"] + accent_daily["Режим торгов"].dropna().unique().tolist()
