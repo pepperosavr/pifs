@@ -1,6 +1,6 @@
 import os
 from io import BytesIO
-from datetime import date
+from datetime import date, timedata
 from typing import Optional, Dict, Any, List
 
 import numpy as np
@@ -385,38 +385,95 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
 
     return out
 
-def build_weekly_summary(df_raw: pd.DataFrame) -> pd.DataFrame:
+def build_period_summary(df_raw: pd.DataFrame, period_kind: str) -> pd.DataFrame:
+    
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
 
     d = df_raw.copy()
-    d["tradedate"] = pd.to_datetime(d["tradedate"])
 
-    # дата начала недели = понедельник
-    d["Начало недели"] = (
-        d["tradedate"] - pd.to_timedelta(d["tradedate"].dt.weekday, unit="D")
-    ).dt.date
+    dt = pd.to_datetime(d["tradedate"], errors="coerce")
+    d = d.dropna(subset=["fund", "mode", "value", "volume", "numtrades", "tradedate"]).copy()
+    dt = pd.to_datetime(d["tradedate"], errors="coerce")
+
+    if period_kind == "Неделя":
+        d["period_start"] = (dt - pd.to_timedelta(dt.dt.weekday, unit="D")).dt.date
+        d["period_end"] = (pd.to_datetime(d["period_start"]) + pd.to_timedelta(6, unit="D")).dt.date
+    elif period_kind == "Месяц":
+        d["period_start"] = dt.dt.to_period("M").dt.start_time.dt.date
+        d["period_end"] = (pd.to_datetime(d["period_start"]) + pd.offsets.MonthEnd(0)).dt.date
+    elif period_kind == "Квартал":
+        d["period_start"] = dt.dt.to_period("Q").dt.start_time.dt.date
+        d["period_end"] = (pd.to_datetime(d["period_start"]) + pd.offsets.QuarterEnd(0)).dt.date
+    elif period_kind == "Год":
+        d["period_start"] = dt.dt.to_period("Y").dt.start_time.dt.date
+        d["period_end"] = (pd.to_datetime(d["period_start"]) + pd.offsets.YearEnd(0)).dt.date
+    else:
+        raise ValueError(f"Неизвестный период: {period_kind}")
 
     grp = (
-        d.groupby(["Начало недели", "fund", "mode"], as_index=False)
-        .agg(
-            volume=("volume", "sum"),
-            value=("value", "sum"),
-            numtrades=("numtrades", "sum"),
-        )
+        d.groupby(["period_start", "period_end", "fund", "mode"], as_index=False)
+         .agg(
+             volume=("volume", "sum"),
+             value=("value", "sum"),
+             numtrades=("numtrades", "sum"),
+         )
+         .rename(columns={
+             "fund": "Фонд",
+             "mode": "Режим торгов",
+             "volume": "Кол-во бумаг, шт",
+             "value": "Оборот, руб",
+             "numtrades": "Сделок, шт",
+         })
     )
 
-    grp = grp.rename(
-        columns={
-            "fund": "Фонд",
-            "mode": "Режим торгов",
-            "volume": "Кол-во бумаг, шт",
-            "value": "Оборот, руб",
-            "numtrades": "Сделок, шт",
-        }
+    return grp.sort_values(["period_start", "Фонд", "Режим торгов"], ascending=[False, True, True])
+
+
+def pivot_period_summary(period_df: pd.DataFrame) -> pd.DataFrame:
+    if period_df is None or period_df.empty:
+        return pd.DataFrame()
+
+    metrics = ["Кол-во бумаг, шт", "Оборот, руб", "Сделок, шт"]
+
+    pv = period_df.pivot_table(
+        index=["period_start", "period_end", "Фонд"],
+        columns="Режим торгов",
+        values=metrics,
+        aggfunc="sum",
+        fill_value=0,
     )
 
-    return grp.sort_values(["Начало недели", "Фонд", "Режим торгов"], ascending=[False, True, True])
+    pv.columns = [f"{m} — {mode}" for m, mode in pv.columns]
+    pv = pv.reset_index().rename(columns={
+        "period_start": "Начало периода",
+        "period_end": "Конец периода",
+    })
+
+    for m in metrics:
+        col_main = f"{m} — Основной режим"
+        col_rps  = f"{m} — РПС"
+
+        if col_main not in pv.columns:
+            pv[col_main] = 0
+        if col_rps not in pv.columns:
+            pv[col_rps] = 0
+
+        pv[f"{m} — Итого"] = pv[col_main] + pv[col_rps]
+
+    # порядок колонок (красиво)
+    ordered = ["Начало периода", "Конец периода", "Фонд"]
+    for m in metrics:
+        ordered += [
+            f"{m} — Основной режим",
+            f"{m} — РПС",
+            f"{m} — Итого",
+        ]
+        
+    ordered = [c for c in ordered if c in pv.columns]
+    pv = pv[ordered].sort_values(["Начало периода", "Фонд"], ascending=[False, True]).reset_index(drop=True)
+
+    return pv
 
 
 # =========================
@@ -431,6 +488,14 @@ with st.sidebar:
     d_from = st.date_input("Начало", value=default_from)
     d_to = st.date_input("Конец", value=today)
 
+    # --- период для итогов ---
+    period_kind = st.radio(
+        "Итоги: период отображения",
+        options=["Неделя", "Месяц", "Квартал", "Год"],
+        horizontal=True,
+        index=0,
+    )
+
     if st.button("Очистить кеш", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -443,11 +508,23 @@ if d_from > d_to:
 # =========================
 # Загрузка и расчет
 # =========================
-week_from = _week_monday(d_from)
+def _align_period_start(d: date, period_kind: str) -> date:
+    if period_kind == "Неделя":
+        return _week_monday(d)
+    if period_kind == "Месяц":
+        return date(d.year, d.month, 1)
+    if period_kind == "Квартал":
+        q_month = ((d.month - 1) // 3) * 3 + 1
+        return date(d.year, q_month, 1)
+    if period_kind == "Год":
+        return date(d.year, 1, 1)
+    return d
+
+period_from = _align_period_start(d_from, period_kind)
 
 with st.spinner("Загружаю данные из API..."):
-    # Для недельной таблицы: с понедельника недели, в которую попадает d_from
-    df_raw_week = load_accent_raw(week_from, d_to)
+    df_raw_period = load_accent_raw(period_from, d_to)  # <-- вместо df_raw_week
+    df_raw_day = load_accent_raw(d_from, d_to)
 
     # Для дневной таблицы: как выбрал пользователь
     df_raw_day = load_accent_raw(d_from, d_to)
@@ -456,24 +533,78 @@ if df_raw_week.empty and df_raw_day.empty:
     st.warning("Нет данных в выбранном диапазоне.")
     st.stop()
 
-# 1. Таблица итогов за неделю
-st.subheader("Итоги за неделю: Основной режим vs РПС")
-weekly_df = build_weekly_summary(df_raw_week)
+# 1. Итоги за период (Неделя/Месяц/Квартал/Год)
+st.subheader(f"Итоги за {period_kind.lower()}: Основной режим vs РПС")
 
-if not weekly_df.empty:
+period_long = build_period_summary(df_raw_period, period_kind)
+period_pivot = pivot_period_summary(period_long)
+
+if period_pivot.empty:
+    st.warning("Не удалось построить таблицу итогов за период.")
+else:
+    # --- выбор отображаемых колонок через кнопку ---
+    with st.popover("Выбрать колонки для отображения"):
+        all_cols = period_pivot.columns.tolist()
+
+        # разумный дефолт: даты + фонд + оборот (3 колонки)
+        default_cols = [c for c in all_cols if c in [
+            "Начало периода", "Конец периода", "Фонд",
+            "Оборот, руб — Основной режим", "Оборот, руб — РПС", "Оборот, руб — Итого",
+        ]]
+        if not default_cols:
+            default_cols = all_cols
+
+        selected_cols = st.multiselect(
+            "Колонки",
+            options=all_cols,
+            default=default_cols,
+        )
+
+    if not selected_cols:
+        st.info("Выберите хотя бы одну колонку.")
+        period_show = period_pivot.copy()
+    else:
+        period_show = period_pivot[selected_cols].copy()
+
+    # формат чисел (без Styler тоже можно, но так удобнее)
+    fmt = {}
+    for c in period_show.columns:
+        if "Кол-во бумаг" in c or "Сделок" in c:
+            fmt[c] = "{:.0f}"
+        if "Оборот" in c:
+            fmt[c] = "{:.0f}"
+
     st.dataframe(
-        weekly_df.style.format(
-            {
-                "Кол-во бумаг, шт": "{:.0f}",
-                "Оборот, руб": "{:.0f}",
-                "Сделок, шт": "{:.0f}",
-            }
-        ),
+        period_show.style.format(fmt),
         use_container_width=True,
         hide_index=True,
     )
-else:
-    st.warning("Не удалось построить недельную таблицу.")
+
+    # --- Excel сразу под таблицей итогов ---
+    def _df_to_xlsx_bytes_single(df: pd.DataFrame, sheet_name: str) -> bytes:
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name=sheet_name)
+            ws = writer.sheets[sheet_name]
+            ws.freeze_panes = "A2"
+            for col_cells in ws.columns:
+                max_len = 0
+                col_letter = col_cells[0].column_letter
+                for cell in col_cells:
+                    v = "" if cell.value is None else str(cell.value)
+                    max_len = max(max_len, len(v))
+                ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
+        buf.seek(0)
+        return buf.read()
+
+    xlsx_period = _df_to_xlsx_bytes_single(period_show, sheet_name=f"Итоги_{period_kind}")
+    st.download_button(
+        f"Скачать Excel: итоги за {period_kind.lower()}",
+        data=xlsx_period,
+        file_name=f"accent_summary_{period_kind.lower()}_{d_from}_{d_to}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
 
 
 # 2. Детальная дневная таблица
