@@ -797,6 +797,7 @@ if df_raw_period.empty and df_raw_day.empty:
 st.subheader("Оборот на Мосбирже, млн. руб")
 
 value_mode = st.radio(
+    "Оборот на графике",
     options=["Основной режим", "РПС", "Итого (Основной+РПС)"],
     horizontal=True,
     index=0,
