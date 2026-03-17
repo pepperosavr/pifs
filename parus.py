@@ -553,7 +553,6 @@ with st.sidebar:
     d_from = st.date_input("Начало", value=default_from)
     d_to = st.date_input("Конец", value=today)
 
-    # --- период для итогов ---
     period_kind = st.radio(
         "Итоги: период отображения",
         options=["Неделя", "Месяц", "Квартал", "Год"],
@@ -561,39 +560,35 @@ with st.sidebar:
         index=0,
     )
 
-    # --- конечная дата для "последняя неделя/месяц/квартал/год" ---
-if "summary_end" not in st.session_state:
-    st.session_state.summary_end = d_to  # по умолчанию конец = общий конец
+    # --- конечная дата для скользящего окна ---
+    if "summary_end_input" not in st.session_state:
+        st.session_state["summary_end_input"] = d_to
 
-summary_end = st.date_input(
-    "Конец периода итогов",
-    value=st.session_state.summary_end,
-    min_value=date(2010, 1, 1),
-    max_value=d_to,
-    key="summary_end_input",
-)
+    summary_end = st.date_input(
+        "Конец периода итогов",
+        key="summary_end_input",
+        min_value=date(2010, 1, 1),
+        max_value=d_to,
+    )
 
-st.session_state.summary_end = summary_end
+    # кнопки сдвига периода
+    c_prev, c_next = st.columns(2)
+    step = step_for_period(period_kind)
 
-# кнопки сдвига периода
-c_prev, c_next = st.columns(2)
-step = step_for_period(period_kind)
+    with c_prev:
+        if st.button("← Предыдущий период", use_container_width=True):
+            st.session_state["summary_end_input"] = summary_end - step
+            st.rerun()
 
-with c_prev:
-    if st.button("← Предыдущий период", use_container_width=True):
-        st.session_state.summary_end = st.session_state.summary_end - step
-        st.rerun()
+    with c_next:
+        if st.button("Следующий период →", use_container_width=True):
+            new_end = summary_end + step
+            st.session_state["summary_end_input"] = min(new_end, d_to)
+            st.rerun()
 
-with c_next:
-    if st.button("Следующий период →", use_container_width=True):
-        new_end = st.session_state.summary_end + step
-        st.session_state.summary_end = min(new_end, d_to)
-        st.rerun()
-
-# окно
-period_start, period_end = calc_period_window(st.session_state.summary_end, period_kind)
-
-st.caption(f"Окно итогов: {period_start} — {period_end}")
+    # окно итогов (скользящее)
+    period_start, period_end = calc_period_window(st.session_state["summary_end_input"], period_kind)
+    st.caption(f"Окно итогов: {period_start} — {period_end}")
 
     if st.button("Очистить кеш", use_container_width=True):
         st.cache_data.clear()
@@ -603,23 +598,9 @@ if d_from > d_to:
     st.error("Некорректный период: начало позже конца.")
     st.stop()
 
-
 # =========================
 # Загрузка и расчет
 # =========================
-def _align_period_start(d: date, period_kind: str) -> date:
-    if period_kind == "Неделя":
-        return _week_monday(d)
-    if period_kind == "Месяц":
-        return date(d.year, d.month, 1)
-    if period_kind == "Квартал":
-        q_month = ((d.month - 1) // 3) * 3 + 1
-        return date(d.year, q_month, 1)
-    if period_kind == "Год":
-        return date(d.year, 1, 1)
-    return d
-
-period_from = _align_period_start(d_from, period_kind)
 
 with st.spinner("Загружаю данные из API..."):
     df_raw_period = load_accent_raw(period_start, period_end)  
