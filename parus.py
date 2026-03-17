@@ -575,30 +575,56 @@ with st.sidebar:
     )
 
     # --- конечная дата для скользящего окна ---
+    MIN_END = date(2010, 1, 1)
+
     if "summary_end_input" not in st.session_state:
         st.session_state["summary_end_input"] = d_to
 
-    summary_end = st.date_input(
+    # если пользователь поменял d_to (общий конец), поджимаем summary_end
+    if st.session_state["summary_end_input"] > d_to:
+        st.session_state["summary_end_input"] = d_to
+    if st.session_state["summary_end_input"] < MIN_END:
+        st.session_state["summary_end_input"] = MIN_END
+
+    # сам виджет читает/пишет в session_state по своему key
+    st.date_input(
         "Конец периода итогов",
         key="summary_end_input",
-        min_value=date(2010, 1, 1),
+        min_value=MIN_END,
         max_value=d_to,
     )
 
-    # кнопки сдвига периода
+    def _shift_summary_end(delta):
+        cur = st.session_state["summary_end_input"]
+        new_end = cur + delta
+        if new_end < MIN_END:
+            new_end = MIN_END
+        if new_end > d_to:
+            new_end = d_to
+        st.session_state["summary_end_input"] = new_end
+
     c_prev, c_next = st.columns(2)
     step = step_for_period(period_kind)
 
     with c_prev:
-        if st.button("← Предыдущий период", use_container_width=True):
-            st.session_state["summary_end_input"] = summary_end - step
-            st.rerun()
+        st.button(
+            "← Предыдущий период",
+            use_container_width=True,
+            on_click=_shift_summary_end,
+            args=(-step,),
+        )
 
     with c_next:
-        if st.button("Следующий период →", use_container_width=True):
-            new_end = summary_end + step
-            st.session_state["summary_end_input"] = min(new_end, d_to)
-            st.rerun()
+        st.button(
+            "Следующий период →",
+            use_container_width=True,
+            on_click=_shift_summary_end,
+            args=(step,),
+        )
+
+    # окно итогов (скользящее)
+    period_start, period_end = calc_period_window(st.session_state["summary_end_input"], period_kind)
+    st.caption(f"Окно итогов: {period_start} — {period_end}")
 
     # окно итогов (скользящее)
     period_start, period_end = calc_period_window(st.session_state["summary_end_input"], period_kind)
