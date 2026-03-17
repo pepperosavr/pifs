@@ -1,6 +1,6 @@
 import os
 from io import BytesIO
-from datetime import date, timedata
+from datetime import date, timedelta
 from typing import Optional, Dict, Any, List
 
 import numpy as np
