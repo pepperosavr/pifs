@@ -562,51 +562,21 @@ RU_MONTHS = {
 }
 
 def _fmt_ru_1(x: float) -> str:
-    # 108,1 вместо 108.1
     return f"{x:.1f}".replace(".", ",")
 
-def _period_bucket(dt: pd.Series, period_kind: str) -> pd.Series:
-    """
-    Возвращает начало периода (Timestamp) для группировки.
-    """
-    if period_kind == "Неделя":
-        week_start = dt - pd.to_timedelta(dt.dt.weekday, unit="D")
-        return week_start.dt.normalize()
-    if period_kind == "Месяц":
-        return dt.dt.to_period("M").dt.start_time.dt.normalize()
-    if period_kind == "Квартал":
-        return dt.dt.to_period("Q").dt.start_time.dt.normalize()
-    if period_kind == "Год":
-        return dt.dt.to_period("Y").dt.start_time.dt.normalize()
-    raise ValueError(f"Неизвестная частота: {period_kind}")
+def _month_bucket(dt: pd.Series) -> pd.Series:
+    # начало календарного месяца
+    return dt.dt.to_period("M").dt.start_time.dt.normalize()
 
-def _period_label(ts: pd.Timestamp, period_kind: str) -> str:
-    """
-    Подпись оси X на русском.
-    """
+def _month_label(ts: pd.Timestamp) -> str:
     d = ts.date()
-    if period_kind == "Месяц":
-        return f"{RU_MONTHS[d.month]} {d.year}"
-    if period_kind == "Квартал":
-        q = ((d.month - 1) // 3) + 1
-        return f"{q} кв. {d.year}"
-    if period_kind == "Год":
-        return f"{d.year}"
-    if period_kind == "Неделя":
-        # показываем диапазон недели: Пн-Вс
-        end_d = d + timedelta(days=6)
-        return f"{d:%d.%m}.{end_d:%d.%m.%Y}"
-    return str(d)
+    return f"{RU_MONTHS[d.month]} {d.year}"
 
 def build_turnover_stacked_chart(
     df_raw: pd.DataFrame,
-    period_kind: str,
-    value_mode: str = "Основной режим",  
+    value_mode: str = "Основной режим",
 ) -> "go.Figure":
-    """
-    Stacked bar по фондам (ЗПИФ 5 + ЗПИФ 4), агрегировано по period_kind.
-    Значения: оборот value в млн руб.
-    """
+    
     fig = go.Figure()
     if df_raw is None or df_raw.empty:
         return fig
@@ -635,7 +605,7 @@ def build_turnover_stacked_chart(
     d = d.dropna(subset=["tradedate"]).copy()
     dt = pd.to_datetime(d["tradedate"], errors="coerce")
 
-    d["bucket"] = _period_bucket(dt, period_kind)
+    d["bucket"] = _month_bucket(dt)
 
     # подписи фондов как на картинке
     label_map = {
@@ -664,7 +634,7 @@ def build_turnover_stacked_chart(
 
     pv["total"] = pv["ЗПИФ 5"] + pv["ЗПИФ 4"]
 
-    x_labels = [_period_label(pd.Timestamp(x), period_kind) for x in pv["bucket"]]
+    x_labels = [_month_label(pd.Timestamp(x)) for x in pv["bucket"]]
     y5 = pv["ЗПИФ 5"].astype(float).tolist()
     y4 = pv["ЗПИФ 4"].astype(float).tolist()
     yt = pv["total"].astype(float).tolist()
@@ -824,7 +794,7 @@ if df_raw_period.empty and df_raw_day.empty:
 
 # график
 
-st.subheader("График: оборот по периодам (stacked)")
+st.subheader("Оборот на Мосбирже, млн. руб")
 
 value_mode = st.radio(
     "Оборот на графике",
@@ -836,7 +806,6 @@ value_mode = st.radio(
 
 fig_turnover = build_turnover_stacked_chart(
     df_raw=df_raw_day,
-    period_kind=period_kind,      # <-- синхронизация по частоте с итогами
     value_mode=value_mode,
 )
 
