@@ -1,6 +1,7 @@
 import os
 from io import BytesIO
 from datetime import date, timedelta
+from dateutil.relativedelta import relativedelta
 from typing import Optional, Dict, Any, List
 
 import numpy as np
@@ -208,6 +209,43 @@ def _to_api_dt(d: date, end_of_day: bool) -> str:
 
 def _week_monday(d: date) -> date:
     return date.fromordinal(d.toordinal() - d.weekday())
+
+def calc_period_window(end_d: date, period_kind: str) -> tuple[date, date]:
+    """
+    Скользящее окно, привязанное к end_d (включительно).
+    Неделя: 7 днеи
+    Месяц: 1 месяц назад
+    Квартал: 3 месяца назад
+    Год: 1 год назад
+    """
+    if period_kind == "Неделя":
+        start_d = end_d - timedelta(days=6)
+        return start_d, end_d
+
+    if period_kind == "Месяц":
+        start_d = (end_d - relativedelta(months=1)) + timedelta(days=1)
+        return start_d, end_d
+
+    if period_kind == "Квартал":
+        start_d = (end_d - relativedelta(months=3)) + timedelta(days=1)
+        return start_d, end_d
+
+    if period_kind == "Год":
+        start_d = (end_d - relativedelta(years=1)) + timedelta(days=1)
+        return start_d, end_d
+
+    raise ValueError(f"Неизвестный период: {period_kind}")
+
+def step_for_period(period_kind: str) -> relativedelta | timedelta:
+    if period_kind == "Неделя":
+        return timedelta(days=7)
+    if period_kind == "Месяц":
+        return relativedelta(months=1)
+    if period_kind == "Квартал":
+        return relativedelta(months=3)
+    if period_kind == "Год":
+        return relativedelta(years=1)
+    return timedelta(days=0)
 
 
 # =========================
@@ -475,6 +513,33 @@ def pivot_period_summary(period_df: pd.DataFrame) -> pd.DataFrame:
 
     return pv
 
+def build_range_summary(df_raw: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFrame:
+    if df_raw is None or df_raw.empty:
+        return pd.DataFrame()
+
+    d = df_raw.copy()
+    d = d.dropna(subset=["fund", "mode", "value", "volume", "numtrades", "tradedate"]).copy()
+
+    grp = (
+        d.groupby(["fund", "mode"], as_index=False)
+         .agg(
+             volume=("volume", "sum"),
+             value=("value", "sum"),
+             numtrades=("numtrades", "sum"),
+         )
+         .rename(columns={
+             "fund": "Фонд",
+             "mode": "Режим торгов",
+             "volume": "Кол-во бумаг, шт",
+             "value": "Оборот, руб",
+             "numtrades": "Сделок, шт",
+         })
+    )
+
+    grp.insert(0, "Начало периода", start_d)
+    grp.insert(1, "Конец периода", end_d)
+    return grp
+
 
 # =========================
 # UI: параметры
@@ -495,6 +560,40 @@ with st.sidebar:
         horizontal=True,
         index=0,
     )
+
+    # --- конечная дата для "последняя неделя/месяц/квартал/год" ---
+if "summary_end" not in st.session_state:
+    st.session_state.summary_end = d_to  # по умолчанию конец = общий конец
+
+summary_end = st.date_input(
+    "Конец периода итогов",
+    value=st.session_state.summary_end,
+    min_value=date(2010, 1, 1),
+    max_value=d_to,
+    key="summary_end_input",
+)
+
+st.session_state.summary_end = summary_end
+
+# кнопки сдвига периода
+c_prev, c_next = st.columns(2)
+step = step_for_period(period_kind)
+
+with c_prev:
+    if st.button("← Предыдущий период", use_container_width=True):
+        st.session_state.summary_end = st.session_state.summary_end - step
+        st.rerun()
+
+with c_next:
+    if st.button("Следующий период →", use_container_width=True):
+        new_end = st.session_state.summary_end + step
+        st.session_state.summary_end = min(new_end, d_to)
+        st.rerun()
+
+# окно
+period_start, period_end = calc_period_window(st.session_state.summary_end, period_kind)
+
+st.caption(f"Окно итогов: {period_start} — {period_end}")
 
     if st.button("Очистить кеш", use_container_width=True):
         st.cache_data.clear()
@@ -523,8 +622,8 @@ def _align_period_start(d: date, period_kind: str) -> date:
 period_from = _align_period_start(d_from, period_kind)
 
 with st.spinner("Загружаю данные из API..."):
-    df_raw_period = load_accent_raw(period_from, d_to)
-    df_raw_day = load_accent_raw(d_from, d_to)
+    df_raw_period = load_accent_raw(period_start, period_end)  
+    df_raw_day    = load_accent_raw(d_from, d_to)              
 
 if df_raw_period.empty and df_raw_day.empty:
     st.warning("Нет данных в выбранном диапазоне.")
@@ -533,7 +632,7 @@ if df_raw_period.empty and df_raw_day.empty:
 # 1. Итоги за период (Неделя/Месяц/Квартал/Год)
 st.subheader(f"Итоги за {period_kind.lower()}: Основной режим vs РПС")
 
-period_long = build_period_summary(df_raw_period, period_kind)
+period_long = build_range_summary(df_raw_period, period_start, period_end)
 period_pivot = pivot_period_summary(period_long)
 
 if period_pivot.empty:
