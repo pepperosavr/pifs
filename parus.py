@@ -596,7 +596,7 @@ else:
 
     xlsx_period = _df_to_xlsx_bytes_single(period_show, sheet_name=f"Итоги_{period_kind}")
     st.download_button(
-        f"Скачать Excel: итоги за {period_kind.lower()}",
+        f"Скачать Excel: итоги, {period_kind.lower()}",
         data=xlsx_period,
         file_name=f"accent_summary_{period_kind.lower()}_{d_from}_{d_to}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
