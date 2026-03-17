@@ -678,7 +678,7 @@ def build_turnover_stacked_chart(
 
     title_suffix = ""
     if value_mode == "Основной режим":
-        title_suffix = " (основнои режим)"
+        title_suffix = " (основной режим)"
     elif value_mode == "РПС":
         title_suffix = " (РПС)"
     else:
