@@ -626,10 +626,6 @@ with st.sidebar:
     period_start, period_end = calc_period_window(st.session_state["summary_end_input"], period_kind)
     st.caption(f"Окно итогов: {period_start} — {period_end}")
 
-    # окно итогов (скользящее)
-    period_start, period_end = calc_period_window(st.session_state["summary_end_input"], period_kind)
-    st.caption(f"Окно итогов: {period_start} — {period_end}")
-
     if st.button("Очистить кеш", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
