@@ -523,13 +523,10 @@ def _align_period_start(d: date, period_kind: str) -> date:
 period_from = _align_period_start(d_from, period_kind)
 
 with st.spinner("Загружаю данные из API..."):
-    df_raw_period = load_accent_raw(period_from, d_to)  # <-- вместо df_raw_week
+    df_raw_period = load_accent_raw(period_from, d_to)
     df_raw_day = load_accent_raw(d_from, d_to)
 
-    # Для дневной таблицы: как выбрал пользователь
-    df_raw_day = load_accent_raw(d_from, d_to)
-
-if df_raw_week.empty and df_raw_day.empty:
+if df_raw_period.empty and df_raw_day.empty:
     st.warning("Нет данных в выбранном диапазоне.")
     st.stop()
 
@@ -640,70 +637,3 @@ if not accent_daily.empty:
     )
 else:
     st.warning("Не удалось построить детальную таблицу.")
-
-
-# =========================
-# Выгрузка в Excel
-# =========================
-def df_to_xlsx_bytes(
-    weekly_df: pd.DataFrame,
-    daily_df: pd.DataFrame,
-    weekly_sheet_name: str = "Итоги за неделю",
-    daily_sheet_name: str = "Детальные торги",
-) -> bytes:
-    buf = BytesIO()
-
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        weekly_to_save = weekly_df.copy()
-        weekly_to_save.to_excel(writer, index=False, sheet_name=weekly_sheet_name)
-
-        ws1 = writer.sheets[weekly_sheet_name]
-        ws1.freeze_panes = "A2"
-
-        for col_cells in ws1.columns:
-            max_len = 0
-            col_letter = col_cells[0].column_letter
-            for cell in col_cells:
-                v = "" if cell.value is None else str(cell.value)
-                max_len = max(max_len, len(v))
-            ws1.column_dimensions[col_letter].width = min(max_len + 2, 60)
-
-        daily_to_save = daily_df.copy()
-        daily_to_save.to_excel(writer, index=False, sheet_name=daily_sheet_name)
-
-        ws2 = writer.sheets[daily_sheet_name]
-        ws2.freeze_panes = "A2"
-
-        for col_cells in ws2.columns:
-            max_len = 0
-            col_letter = col_cells[0].column_letter
-            for cell in col_cells:
-                v = "" if cell.value is None else str(cell.value)
-                max_len = max(max_len, len(v))
-            ws2.column_dimensions[col_letter].width = min(max_len + 2, 60)
-
-    buf.seek(0)
-    return buf.read()
-
-
-try:
-    xlsx_bytes = df_to_xlsx_bytes(weekly_df, accent_daily_show)
-
-    st.download_button(
-        "Скачать Excel (.xlsx)",
-        data=xlsx_bytes,
-        file_name=f"accent_weekly_daily_{d_from}_{d_to}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
-except Exception as e:
-    st.warning(f"Excel выгрузка недоступна: {e}")
-
-    csv_bytes = accent_daily_show.to_csv(index=False, encoding="utf-8").encode("utf-8")
-
-    st.download_button(
-        "Скачать как CSV",
-        data=csv_bytes,
-        file_name="accent_daily.csv",
-        use_container_width=True,
-    )
