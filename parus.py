@@ -637,3 +637,33 @@ if not accent_daily.empty:
     )
 else:
     st.warning("Не удалось построить детальную таблицу.")
+
+# --- Excel выгрузка: детальные торги ---
+def _df_to_xlsx_bytes_single(df: pd.DataFrame, sheet_name: str) -> bytes:
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name)
+        ws = writer.sheets[sheet_name]
+        ws.freeze_panes = "A2"
+
+        # автоширина колонок
+        for col_cells in ws.columns:
+            max_len = 0
+            col_letter = col_cells[0].column_letter
+            for cell in col_cells:
+                v = "" if cell.value is None else str(cell.value)
+                max_len = max(max_len, len(v))
+            ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
+
+    buf.seek(0)
+    return buf.read()
+
+# Кнопку показываем только если есть что выгружать
+xlsx_daily = _df_to_xlsx_bytes_single(accent_daily_show, sheet_name="Детальные торги")
+st.download_button(
+    "Скачать Excel: детальные торги",
+    data=xlsx_daily,
+    file_name=f"accent_daily_{d_from}_{d_to}.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    use_container_width=True,
+)
