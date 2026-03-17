@@ -815,7 +815,7 @@ else:
     st.info("Нет данных для построения графика.")
 
 # 1. Итоги за период (Неделя/Месяц/Квартал/Год)
-st.subheader(f"Итоги за {period_kind.lower()}: Основной режим vs РПС")
+st.subheader(f"Итоги, {period_kind.lower()}: Основной режим vs РПС")
 
 period_long = build_range_summary(df_raw_period, period_start, period_end)
 period_pivot = pivot_period_summary(period_long)
