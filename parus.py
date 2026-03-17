@@ -9,7 +9,7 @@ import openpyxl
 import pandas as pd
 import requests
 import streamlit as st
-
+import plotly.graph_objects as go
 
 # =========================
 # Конфигурация
@@ -555,6 +555,182 @@ def build_range_summary(df_raw: pd.DataFrame, start_d: date, end_d: date) -> pd.
     return grp
 
 
+RU_MONTHS = {
+    1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+    5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
+    9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
+}
+
+def _fmt_ru_1(x: float) -> str:
+    # 108,1 вместо 108.1
+    return f"{x:.1f}".replace(".", ",")
+
+def _period_bucket(dt: pd.Series, period_kind: str) -> pd.Series:
+    """
+    Возвращает начало периода (Timestamp) для группировки.
+    """
+    if period_kind == "Неделя":
+        week_start = dt - pd.to_timedelta(dt.dt.weekday, unit="D")
+        return week_start.dt.normalize()
+    if period_kind == "Месяц":
+        return dt.dt.to_period("M").dt.start_time.dt.normalize()
+    if period_kind == "Квартал":
+        return dt.dt.to_period("Q").dt.start_time.dt.normalize()
+    if period_kind == "Год":
+        return dt.dt.to_period("Y").dt.start_time.dt.normalize()
+    raise ValueError(f"Неизвестная частота: {period_kind}")
+
+def _period_label(ts: pd.Timestamp, period_kind: str) -> str:
+    """
+    Подпись оси X на русском.
+    """
+    d = ts.date()
+    if period_kind == "Месяц":
+        return f"{RU_MONTHS[d.month]} {d.year}"
+    if period_kind == "Квартал":
+        q = ((d.month - 1) // 3) + 1
+        return f"{q} кв. {d.year}"
+    if period_kind == "Год":
+        return f"{d.year}"
+    if period_kind == "Неделя":
+        # показываем диапазон недели: Пн-Вс
+        end_d = d + timedelta(days=6)
+        return f"{d:%d.%m}.{end_d:%d.%m.%Y}"
+    return str(d)
+
+def build_turnover_stacked_chart(
+    df_raw: pd.DataFrame,
+    period_kind: str,
+    value_mode: str = "Основной режим",  
+) -> "go.Figure":
+    """
+    Stacked bar по фондам (ЗПИФ 5 + ЗПИФ 4), агрегировано по period_kind.
+    Значения: оборот value в млн руб.
+    """
+    fig = go.Figure()
+    if df_raw is None or df_raw.empty:
+        return fig
+
+    d = df_raw.copy()
+
+    # только Акцент IV/5
+    d = d[d["isin"].isin([ACCENT_IV_ISIN, ACCENT_5_ISIN])].copy()
+    if d.empty:
+        return fig
+
+    # режим торгов для графика
+    if "mode" in d.columns:
+        if value_mode == "Основной режим":
+            d = d[d["mode"] == "Основной режим"].copy()
+        elif value_mode == "РПС":
+            d = d[d["mode"] == "РПС"].copy()
+        else:
+            # Итого: оставляем оба режима
+            d = d[d["mode"].isin(["Основной режим", "РПС"])].copy()
+
+    d["value"] = pd.to_numeric(d["value"], errors="coerce")
+    d = d.dropna(subset=["tradedate", "value"]).copy()
+
+    dt = pd.to_datetime(d["tradedate"], errors="coerce")
+    d = d.dropna(subset=["tradedate"]).copy()
+    dt = pd.to_datetime(d["tradedate"], errors="coerce")
+
+    d["bucket"] = _period_bucket(dt, period_kind)
+
+    # подписи фондов как на картинке
+    label_map = {
+        ACCENT_5_ISIN: "ЗПИФ 5",
+        ACCENT_IV_ISIN: "ЗПИФ 4",
+    }
+    d["fund_label"] = d["isin"].map(label_map).fillna(d.get("fund", d["isin"].astype(str)))
+
+    g = (
+        d.groupby(["bucket", "fund_label"], as_index=False)["value"]
+         .sum()
+    )
+    g["mln"] = g["value"] / 1e6
+
+    pv = (
+        g.pivot_table(index="bucket", columns="fund_label", values="mln", aggfunc="sum", fill_value=0)
+         .reset_index()
+         .sort_values("bucket")
+    )
+
+    # гарантируем колонки
+    if "ЗПИФ 5" not in pv.columns:
+        pv["ЗПИФ 5"] = 0.0
+    if "ЗПИФ 4" not in pv.columns:
+        pv["ЗПИФ 4"] = 0.0
+
+    pv["total"] = pv["ЗПИФ 5"] + pv["ЗПИФ 4"]
+
+    x_labels = [_period_label(pd.Timestamp(x), period_kind) for x in pv["bucket"]]
+    y5 = pv["ЗПИФ 5"].astype(float).tolist()
+    y4 = pv["ЗПИФ 4"].astype(float).tolist()
+    yt = pv["total"].astype(float).tolist()
+
+    # цвета
+    color_zpif5 = "#7A1F1F"   # темно-бордовый
+    color_zpif4 = "#BFBFBF"   # серый
+
+    fig.add_bar(
+        name="ЗПИФ 5",
+        x=x_labels,
+        y=y5,
+        marker_color=color_zpif5,
+        text=[_fmt_ru_1(v) if v > 0 else "" for v in y5],
+        textposition="inside",
+        insidetextanchor="middle",
+        textfont=dict(color="white"),
+    )
+
+    fig.add_bar(
+        name="ЗПИФ 4",
+        x=x_labels,
+        y=y4,
+        marker_color=color_zpif4,
+        text=[_fmt_ru_1(v) if v > 0 else "" for v in y4],
+        textposition="inside",
+        insidetextanchor="middle",
+        textfont=dict(color="black"),
+    )
+
+    # сумма сверху
+    fig.add_scatter(
+        x=x_labels,
+        y=yt,
+        mode="text",
+        text=[_fmt_ru_1(v) if v > 0 else "" for v in yt],
+        textposition="top center",
+        showlegend=False,
+        textfont=dict(color="black"),
+    )
+
+    title_suffix = ""
+    if value_mode == "Основной режим":
+        title_suffix = " (основнои режим)"
+    elif value_mode == "РПС":
+        title_suffix = " (РПС)"
+    else:
+        title_suffix = " (итого: основнои + РПС)"
+
+    fig.update_layout(
+        barmode="stack",
+        title=f"Оборот на Мосбирже, млн руб.{title_suffix}",
+        xaxis_title=None,
+        yaxis_title=None,
+        legend_title_text=None,
+        separators=". ",
+        margin=dict(l=30, r=30, t=60, b=30),
+    )
+
+    # чтобы подписи суммы не обрезались
+    max_y = max(yt) if yt else 0.0
+    fig.update_yaxes(range=[0, max_y * 1.25 if max_y > 0 else 1])
+
+    return fig
+
+
 # =========================
 # UI: параметры
 # =========================
@@ -645,6 +821,29 @@ with st.spinner("Загружаю данные из API..."):
 if df_raw_period.empty and df_raw_day.empty:
     st.warning("Нет данных в выбранном диапазоне.")
     st.stop()
+
+# график
+
+st.subheader("График: оборот по периодам (stacked)")
+
+value_mode = st.radio(
+    "Оборот на графике",
+    options=["Основной режим", "РПС", "Итого (Основной+РПС)"],
+    horizontal=True,
+    index=0,
+    key="turnover_value_mode",
+)
+
+fig_turnover = build_turnover_stacked_chart(
+    df_raw=df_raw_day,
+    period_kind=period_kind,      # <-- синхронизация по частоте с итогами
+    value_mode=value_mode,
+)
+
+if fig_turnover.data:
+    st.plotly_chart(fig_turnover, use_container_width=True)
+else:
+    st.info("Нет данных для построения графика.")
 
 # 1. Итоги за период (Неделя/Месяц/Квартал/Год)
 st.subheader(f"Итоги за {period_kind.lower()}: Основной режим vs РПС")
