@@ -474,45 +474,59 @@ def pivot_period_summary(period_df: pd.DataFrame) -> pd.DataFrame:
 
     metrics = ["Кол-во бумаг, шт", "Оборот, руб", "Сделок, шт"]
 
+    # 1) Определяем, какие колонки периода есть в данных
+    if {"period_start", "period_end"}.issubset(period_df.columns):
+        idx_cols = ["period_start", "period_end", "Фонд"]
+        rename_after = {"period_start": "Начало периода", "period_end": "Конец периода"}
+    elif {"Начало периода", "Конец периода"}.issubset(period_df.columns):
+        idx_cols = ["Начало периода", "Конец периода", "Фонд"]
+        rename_after = {}
+    else:
+        raise KeyError(
+            "В period_df нет колонок периода. Ожидаю либо "
+            "period_start/period_end, либо Начало периода/Конец периода."
+        )
+
+    # 2) Pivot
     pv = period_df.pivot_table(
-        index=["period_start", "period_end", "Фонд"],
+        index=idx_cols,
         columns="Режим торгов",
         values=metrics,
         aggfunc="sum",
         fill_value=0,
     )
 
+    # 3) Выпрямляем MultiIndex колонок
     pv.columns = [f"{m} — {mode}" for m, mode in pv.columns]
-    pv = pv.reset_index().rename(columns={
-        "period_start": "Начало периода",
-        "period_end": "Конец периода",
-    })
+    pv = pv.reset_index()
 
+    # 4) Приводим названия к единому виду (если были period_start/period_end)
+    if rename_after:
+        pv = pv.rename(columns=rename_after)
+
+    # 5) Итого = Основной режим + РПС
     for m in metrics:
         col_main = f"{m} — Основной режим"
-        col_rps  = f"{m} — РПС"
-
+        col_rps = f"{m} — РПС"
         if col_main not in pv.columns:
             pv[col_main] = 0
         if col_rps not in pv.columns:
             pv[col_rps] = 0
-
         pv[f"{m} — Итого"] = pv[col_main] + pv[col_rps]
 
-    # порядок колонок (красиво)
+    # 6) Красивый порядок колонок
     ordered = ["Начало периода", "Конец периода", "Фонд"]
     for m in metrics:
-        ordered += [
-            f"{m} — Основной режим",
-            f"{m} — РПС",
-            f"{m} — Итого",
-        ]
-        
+        ordered += [f"{m} — Основной режим", f"{m} — РПС", f"{m} — Итого"]
+
     ordered = [c for c in ordered if c in pv.columns]
-    pv = pv[ordered].sort_values(["Начало периода", "Фонд"], ascending=[False, True]).reset_index(drop=True)
+    pv = (
+        pv[ordered]
+        .sort_values(["Начало периода", "Фонд"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
 
     return pv
-
 def build_range_summary(df_raw: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFrame:
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
