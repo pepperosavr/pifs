@@ -16,10 +16,10 @@ st.set_page_config(
 )
 
 ISS_BASE = "https://iss.moex.com/iss"
-RF = 0.16  # как в исходном HTML
+RF = 0.16  
 
 # =========================
-# Индексы и логика приложения
+# Индексы 
 # =========================
 INDEX_META: Dict[str, dict] = {
     "IMOEX": {
@@ -83,7 +83,7 @@ METRIC_DEFS = [
         "dir": 1,
         "gt": 12,
         "ot": 7,
-        "desc": "Историческая CAGR по выбранному периоду",
+        "desc": "Среднегодовая взвешенная доходность портфеля",
     },
     {
         "label": "Волатильность",
@@ -94,7 +94,7 @@ METRIC_DEFS = [
         "dir": -1,
         "gt": 12,
         "ot": 18,
-        "desc": "Годовая историческая волатильность",
+        "desc": "Стандартное отклонение — мера нестабильности",
     },
     {
         "label": "Коэф. Шарпа",
@@ -105,7 +105,7 @@ METRIC_DEFS = [
         "dir": 1,
         "gt": 0.3,
         "ot": 0,
-        "desc": "Доходность сверх 16% на единицу риска",
+        "desc": "Доходность сверх ставки ЦБ (16%) на единицу риска",
     },
     {
         "label": "Коэф. Сортино",
@@ -116,7 +116,7 @@ METRIC_DEFS = [
         "dir": 1,
         "gt": 0.4,
         "ot": 0,
-        "desc": "Коэффициент с учетом downside deviation",
+        "desc": "Шарп, штрафующий только нисходящую волатильность",
     },
     {
         "label": "Макс. просадка",
@@ -127,7 +127,7 @@ METRIC_DEFS = [
         "dir": -1,
         "gt": -15,
         "ot": -30,
-        "desc": "Максимальная историческая просадка",
+        "desc": "Максимальное падение стоимости от исторического пика",
     },
     {
         "label": "Коэф. Кальмара",
@@ -138,7 +138,7 @@ METRIC_DEFS = [
         "dir": 1,
         "gt": 0.5,
         "ot": 0.2,
-        "desc": "CAGR / |Max Drawdown|",
+        "desc": "Доходность / |Макс. просадка| — качество риска/награды",
     },
 ]
 
@@ -325,11 +325,6 @@ def asset_stats_from_raw(df: pd.DataFrame) -> Tuple[float, float] | None:
 
 
 def prepare_window(prices: pd.DataFrame, active_keys: List[str]) -> pd.DataFrame:
-    """
-    Для корректного сравнения сценариев:
-    - берем общий ценовой DataFrame по всем индексам,
-    - отбрасываем даты, где еще нет данных по активным индексам.
-    """
     df = prices.copy().set_index("tradedate")
     df = df.dropna(subset=active_keys).copy()
     return df[ALL]
@@ -617,7 +612,7 @@ if d_from >= d_to:
 # =========================
 # Загрузка данных
 # =========================
-with st.spinner("Загружаю реальные ряды индексов из ISS..."):
+with st.spinner("Загружаю ряды индексов..."):
     try:
         prices, resolved_map, raw_map = load_all_index_data(d_from, d_to)
     except Exception as e:
@@ -639,7 +634,7 @@ with col_left:
         "# Портфель <span style='color:#e8c97a'>Российских Индексов</span>",
         unsafe_allow_html=True,
     )
-    st.caption("Реальные ряды MOEX ISS · Исторические метрики риска и доходности")
+    st.caption("Интерактивный анализ · Метрики риска и доходности")
 
 with col_right:
     with st.container(border=True):
@@ -737,7 +732,6 @@ actual_end = price_window.index.max()
 
 st.caption(
     f"Фактическое окно расчета: {actual_start} — {actual_end}. "
-    f"Если включен MREF, начало может сдвигаться вперед из-за более короткой истории."
 )
 
 # =========================
