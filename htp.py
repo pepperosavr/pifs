@@ -42,7 +42,7 @@ INDEX_META: Dict[str, dict] = {
     },
     "RUCBTR": {
         "name": "Корп. облигации",
-        "aliases": ["RUCBTR"],  # fallback
+        "aliases": ["RUCBTR", "RUCBTRNS"]],  # fallback
         "color": "#94a3b8",
         "max": 80,
     },
