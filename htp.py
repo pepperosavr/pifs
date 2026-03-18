@@ -14,8 +14,15 @@ ASSETS = {
         "s": 0.228,
         "color": "#c8a86b",
         "max": 80,
-        "corr": {"IMOEX": 1, "RGBI": -0.18, "MCFTR": 0.85, "RUCBTR": 0.22, "MREF": 0.21},
-        "stat": "Доходность: +14.2% / год · Вол: 22.8%",
+        "corr": {
+            "IMOEX": 1,
+            "RGBI": -0.18,
+            "MCFTR": 0.85,
+            "RUCBTR": 0.22,
+            "MREF": 0.21,
+        },
+        "ret_text": "+14.2% / год",
+        "vol_text": "22.8%",
     },
     "RGBI": {
         "name": "Гос. облигации (ОФЗ)",
@@ -23,8 +30,15 @@ ASSETS = {
         "s": 0.055,
         "color": "#64748b",
         "max": 80,
-        "corr": {"IMOEX": -0.18, "RGBI": 1, "MCFTR": -0.12, "RUCBTR": 0.62, "MREF": -0.05},
-        "stat": "Доходность: +8.2% / год · Вол: 5.5%",
+        "corr": {
+            "IMOEX": -0.18,
+            "RGBI": 1,
+            "MCFTR": -0.12,
+            "RUCBTR": 0.62,
+            "MREF": -0.05,
+        },
+        "ret_text": "+8.2% / год",
+        "vol_text": "5.5%",
     },
     "MCFTR": {
         "name": "МосБиржа полной доходности",
@@ -32,8 +46,15 @@ ASSETS = {
         "s": 0.235,
         "color": "#f59e0b",
         "max": 80,
-        "corr": {"IMOEX": 0.85, "RGBI": -0.12, "MCFTR": 1, "RUCBTR": 0.18, "MREF": 0.24},
-        "stat": "Доходность: +16.8% / год · Вол: 23.5%",
+        "corr": {
+            "IMOEX": 0.85,
+            "RGBI": -0.12,
+            "MCFTR": 1,
+            "RUCBTR": 0.18,
+            "MREF": 0.24,
+        },
+        "ret_text": "+16.8% / год",
+        "vol_text": "23.5%",
     },
     "RUCBTR": {
         "name": "Корп. облигации",
@@ -41,8 +62,15 @@ ASSETS = {
         "s": 0.068,
         "color": "#94a3b8",
         "max": 80,
-        "corr": {"IMOEX": 0.22, "RGBI": 0.62, "MCFTR": 0.18, "RUCBTR": 1, "MREF": 0.08},
-        "stat": "Доходность: +9.5% / год · Вол: 6.8%",
+        "corr": {
+            "IMOEX": 0.22,
+            "RGBI": 0.62,
+            "MCFTR": 0.18,
+            "RUCBTR": 1,
+            "MREF": 0.08,
+        },
+        "ret_text": "+9.5% / год",
+        "vol_text": "6.8%",
     },
     "MREF": {
         "name": "Складская и индустриальная недвижимость",
@@ -50,15 +78,28 @@ ASSETS = {
         "s": 0.095,
         "color": "#2dd4bf",
         "max": 40,
-        "corr": {"IMOEX": 0.21, "RGBI": -0.05, "MCFTR": 0.24, "RUCBTR": 0.08, "MREF": 1},
-        "stat": "Доходность: +17.8% / год · Вол: 9.5%",
+        "corr": {
+            "IMOEX": 0.21,
+            "RGBI": -0.05,
+            "MCFTR": 0.24,
+            "RUCBTR": 0.08,
+            "MREF": 1,
+        },
+        "ret_text": "+17.8% / год",
+        "vol_text": "9.5%",
     },
 }
 
 BASE = ["IMOEX", "RGBI", "MCFTR", "RUCBTR"]
 ALL = ["IMOEX", "RGBI", "MCFTR", "RUCBTR", "MREF"]
 RF = 0.16
-BASELINE = {"IMOEX": 40, "RGBI": 25, "MCFTR": 20, "RUCBTR": 15, "MREF": 0}
+BASELINE = {
+    "IMOEX": 40,
+    "RGBI": 25,
+    "MCFTR": 20,
+    "RUCBTR": 15,
+    "MREF": 0,
+}
 
 METRIC_DEFS = [
     {
@@ -138,29 +179,26 @@ def init_state() -> None:
     if "prev_re_on" not in st.session_state:
         st.session_state.prev_re_on = False
 
+    for t in ALL:
+        slider_key = f"slider_{t}"
+        if slider_key not in st.session_state:
+            st.session_state[slider_key] = st.session_state.weights[t]
+
 
 def rebalance_for_toggle(enable_mref: bool) -> None:
-    w = st.session_state.weights
     if enable_mref:
-        w["MREF"] = 15
-        base_sum = sum(w[t] for t in BASE)
-        acc = 0
-        for i, t in enumerate(BASE):
-            if i < len(BASE) - 1:
-                w[t] = round(w[t] / base_sum * 85)
-                acc += w[t]
-            else:
-                w[t] = 85 - acc
+        st.session_state.weights = {
+            "IMOEX": 34,
+            "RGBI": 21,
+            "MCFTR": 17,
+            "RUCBTR": 13,
+            "MREF": 15,
+        }
     else:
-        w["MREF"] = 0
-        base_sum = sum(w[t] for t in BASE)
-        acc = 0
-        for i, t in enumerate(BASE):
-            if i < len(BASE) - 1:
-                w[t] = round(w[t] / base_sum * 100)
-                acc += w[t]
-            else:
-                w[t] = 100 - acc
+        st.session_state.weights = BASELINE.copy()
+
+    for t in ALL:
+        st.session_state[f"slider_{t}"] = st.session_state.weights[t]
 
 
 def portfolio_return(weights_pct: dict[str, int]) -> float:
@@ -185,7 +223,14 @@ def calc_metrics(weights_pct: dict[str, int]) -> dict[str, float]:
     shr = (r - RF) / s if s else 0.0
     sor = (r - RF) / dv if dv else 0.0
     cal = r / abs(mdd) if mdd else 0.0
-    return {"ret": r, "vol": s, "shr": shr, "sor": sor, "mdd": mdd, "cal": cal}
+    return {
+        "ret": r,
+        "vol": s,
+        "shr": shr,
+        "sor": sor,
+        "mdd": mdd,
+        "cal": cal,
+    }
 
 
 def metric_class(direction: int, value: float, good_thr: float, ok_thr: float) -> str:
@@ -202,11 +247,10 @@ def metric_class(direction: int, value: float, good_thr: float, ok_thr: float) -
     return "bad"
 
 
-def format_delta(direction: int, diff: float, dec: int, suffix: str) -> tuple[str, str]:
-    improved = diff > 0 if direction == 1 else diff < 0
-    icon = "▲" if improved else "▼"
+def format_delta(diff: float, dec: int, suffix: str) -> tuple[str, str]:
+    icon = "▲" if diff >= 0 else "▼"
     sign = "+" if diff >= 0 else ""
-    css = "pos" if improved else "neg"
+    css = "pos" if diff >= 0 else "neg"
     return f"{icon} {sign}{diff:.{dec}f}{suffix} vs базовый", css
 
 
@@ -229,6 +273,12 @@ st.markdown(
 
     h1, h2, h3 {
         color: #e2e8f0;
+    }
+
+    div[data-testid="stToggle"] label,
+    div[data-testid="stToggle"] p {
+        color: #ffffff !important;
+        font-weight: 600 !important;
     }
 
     .top-card {
@@ -280,10 +330,29 @@ st.markdown(
     }
 
     .asset-stat {
-        color: #64748b;
+        color: #cbd5e1;
         font-size: 0.78rem;
         margin-top: 8px;
         line-height: 1.4;
+    }
+
+    .asset-stat-label {
+        color: #cbd5e1;
+    }
+
+    .asset-stat-pos {
+        color: #4ade80;
+        font-weight: 600;
+    }
+
+    .asset-stat-light {
+        color: #cbd5e1;
+    }
+
+    div[data-baseweb="slider"] div[role="slider"] {
+        background-color: #d7b38a !important;
+        border-color: #d7b38a !important;
+        box-shadow: 0 0 0 2px rgba(215, 179, 138, 0.25) !important;
     }
 
     .metric-card {
@@ -371,7 +440,6 @@ with col_right:
         key="re_on",
         help="Индекс складской и индустриальной недвижимости МосБиржи",
     )
-    st.caption("При включении MREF получает 15%, а остальные активы автоматически масштабируются до 85%.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 if st.session_state.re_on != st.session_state.prev_re_on:
@@ -404,18 +472,28 @@ for idx, ticker in enumerate(active_tickers):
             label=f"Вес {ticker}",
             min_value=0,
             max_value=asset["max"],
-            value=int(st.session_state.weights[ticker]),
+            value=int(st.session_state[f"slider_{ticker}"]),
             step=1,
             key=f"slider_{ticker}",
             label_visibility="collapsed",
         )
 
         st.session_state.weights[ticker] = slider_value
+
         st.markdown(f"**{slider_value}%**")
-        st.markdown(f"<div class='asset-stat'>{asset['stat']}</div></div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='asset-stat'>"
+            f"<span class='asset-stat-label'>Доходность:</span> "
+            f"<span class='asset-stat-pos'>{asset['ret_text']}</span> · "
+            f"<span class='asset-stat-label'>Вол:</span> "
+            f"<span class='asset-stat-light'>{asset['vol_text']}</span>"
+            f"</div></div>",
+            unsafe_allow_html=True,
+        )
 
 if not st.session_state.re_on:
     st.session_state.weights["MREF"] = 0
+    st.session_state["slider_MREF"] = 0
 
 current_total = sum(st.session_state.weights[t] for t in active_tickers)
 
@@ -430,13 +508,17 @@ else:
     for idx, md in enumerate(METRIC_DEFS):
         raw = current_metrics[md["key"]]
         value = raw * md["mult"]
-        css_class = metric_class(md["dir"], value, md["gt"], md["ot"])
+
+        if value < 0:
+            css_class = "bad"
+        else:
+            css_class = metric_class(md["dir"], value, md["gt"], md["ot"])
 
         delta_html = "<div class='metric-delta zero'></div>"
         if st.session_state.re_on:
             base_value = baseline_metrics[md["key"]] * md["mult"]
             diff = value - base_value
-            delta_text, delta_css = format_delta(md["dir"], diff, md["dec"], md["suf"])
+            delta_text, delta_css = format_delta(diff, md["dec"], md["suf"])
             delta_html = f"<div class='metric-delta {delta_css}'>{delta_text}</div>"
 
         with metric_cols[idx % 3]:
@@ -471,10 +553,7 @@ if st.session_state.re_on:
 st.markdown(
     """
     <div class='footnote'>
-    Данные смоделированы на исторических параметрах индексов Московской биржи (2018–2024).<br>
-    IMOEX, RGBI, MCFTR, RUCBTR — официальные индексы МосБиржи.<br>
-    MREF — индекс складской и индустриальной недвижимости МосБиржи.<br>
-    Безрисковая ставка для коэффициентов Шарпа и Сортино принята равной 16%.<br>
+    Данные смоделированы на исторических параметрах индексов Московской биржи (2018–2024). IMOEX, RGBI, MCFTR, RUCBTR — официальные индексы МосБиржи. MREF — индекс складской и индустриальной недвижимости МосБиржи. Безрисковая ставка для коэффициентов Шарпа и Сортино принята равной 16%.<br>
     Расчеты носят иллюстративный характер и не являются инвестиционной рекомендацией.
     </div>
     """,
