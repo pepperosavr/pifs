@@ -711,11 +711,6 @@ for idx, ticker in enumerate(active_tickers):
         else:
             st.markdown("<div class='asset-stat'>Недостаточно данных</div>", unsafe_allow_html=True)
 
-        st.markdown(
-            f"<div class='asset-note'>ISS тикер: {resolved_map.get(ticker, ticker)}</div></div>",
-            unsafe_allow_html=True,
-        )
-
 if not st.session_state.re_on:
     st.session_state.weights["MREF"] = 0
     st.session_state["slider_MREF"] = 0
@@ -733,10 +728,6 @@ if price_window.empty or len(price_window) < 3:
 
 actual_start = price_window.index.min()
 actual_end = price_window.index.max()
-
-st.caption(
-    f"Фактическое окно расчета: {actual_start} — {actual_end}. "
-)
 
 # =========================
 # Метрики портфеля
@@ -803,7 +794,7 @@ if st.session_state.re_on:
 st.markdown(
     """
     <div class='footnote'>
-    Источник данных: ISS Московской биржи. Метрики рассчитываются по историческим дневным значениям индексов за выбранный период.
+    Источник данных: ISS Московской биржи. Метрики рассчитываются по историческим дневным значениям индексов за выбранный период. IMOEX, RGBI, MCFTR, RUCBTR — официальные индексы МосБиржи. MREF — Индекс складской и индустриальной недвижимости МосБиржи, отражающий совокупную динамику нескольких ЗПИФов соответствующей категории (фонды ПНК, Warehouses ЗПИФ и других управляющих). Безрисковая ставка для коэффициентов Шарпа и Сортино принята равной 16% (ключевая ставка ЦБ РФ).
     Расчеты носят аналитический характер и не являются инвестиционной рекомендацией.
     </div>
     """,
