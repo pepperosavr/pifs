@@ -334,24 +334,180 @@ st.markdown(
         font-weight: 600 !important;
     }
 
-    /* Принудительно красим все части слайдера в бежевый */
-    div[data-baseweb="slider"] [data-testid="stThumbValue"] {
-        color: #d7b38a !important;
-    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.toggle-title) {
+    background: linear-gradient(135deg, #121825, #0f1520) !important;
+    border: 1px solid rgba(200,168,107,0.55) !important;
+    border-radius: 22px !important;
+    padding: 12px 18px 10px 18px !important;
+    margin-top: 28px !important;
+    margin-bottom: 10px !important;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18) !important;
+}
 
-    div[data-baseweb="slider"] div[role="slider"] {
-        background-color: #d7b38a !important;
-        border-color: #d7b38a !important;
-        box-shadow: 0 0 0 2px rgba(215, 179, 138, 0.25) !important;
-    }
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.toggle-title) [data-testid="stHorizontalBlock"] {
+    align-items: center;
+}
 
-    div[data-baseweb="slider"] > div,
-    div[data-baseweb="slider"] > div > div,
-    div[data-baseweb="slider"] > div > div > div,
-    div[data-baseweb="slider"] > div > div > div > div {
-        background-color: #d7b38a !important;
-        border-color: #d7b38a !important;
-    }
+.toggle-title {
+    color: #e2e8f0;
+    font-size: 1.02rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    line-height: 1.1;
+}
+
+.toggle-name {
+    color: #e5e7eb;
+    font-size: 0.98rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+    line-height: 1.2;
+}
+
+.toggle-sub {
+    color: #94a3b8;
+    font-size: 0.80rem;
+    line-height: 1.35;
+}
+
+div[data-testid="stToggle"] label,
+div[data-testid="stToggle"] p {
+    color: #ffffff !important;
+    font-weight: 600 !important;
+}
+
+div[data-baseweb="slider"] div[role="slider"] {
+    background-color: #d7b38a !important;
+    border: 2px solid #d7b38a !important;
+    box-shadow: 0 0 0 2px rgba(215, 179, 138, 0.18) !important;
+}
+
+div[data-testid="stThumbValue"] {
+    color: #d7b38a !important;
+}
+
+.asset-card {
+    background: #111419;
+    border: 1px solid #1e2530;
+    border-radius: 14px;
+    padding: 14px 14px 12px 14px;
+    margin-bottom: 12px;
+    min-height: 170px;
+}
+
+.asset-ticker {
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+}
+
+.asset-name {
+    color: #94a3b8;
+    font-size: 0.88rem;
+    margin-bottom: 10px;
+    min-height: 40px;
+}
+
+.asset-stat {
+    color: #cbd5e1;
+    font-size: 0.78rem;
+    margin-top: 8px;
+    line-height: 1.4;
+}
+
+.asset-stat-label {
+    color: #cbd5e1;
+}
+
+.asset-stat-pos {
+    color: #4ade80;
+    font-weight: 600;
+}
+
+.asset-stat-light {
+    color: #cbd5e1;
+}
+
+.metric-card {
+    background: #111419;
+    border: 1px solid #1e2530;
+    border-radius: 14px;
+    padding: 18px 16px;
+    min-height: 160px;
+}
+
+.metric-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-bottom: 10px;
+}
+
+.metric-value {
+    font-size: 1.65rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 8px;
+}
+
+.good { color: #4ade80; }
+.neutral { color: #e8c97a; }
+.bad { color: #f87171; }
+
+.metric-delta {
+    font-size: 0.80rem;
+    margin-bottom: 8px;
+    min-height: 1.2em;
+}
+
+.pos { color: #4ade80; }
+.neg { color: #f87171; }
+.zero { color: #64748b; }
+
+.metric-desc {
+    font-size: 0.78rem;
+    color: #64748b;
+    line-height: 1.45;
+}
+
+.banner {
+    background: linear-gradient(135deg, rgba(200,168,107,0.08), rgba(200,168,107,0.02));
+    border: 1px solid rgba(200,168,107,0.2);
+    border-radius: 12px;
+    padding: 14px 18px;
+    color: #c8a86b;
+    margin: 8px 0 22px 0;
+}
+
+.section-title {
+    font-size: 0.82rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin: 24px 0 12px 0;
+    font-weight: 700;
+}
+
+.insight {
+    background: linear-gradient(135deg, rgba(45,212,191,0.06), rgba(45,212,191,0.02));
+    border: 1px solid rgba(45,212,191,0.18);
+    border-radius: 14px;
+    padding: 20px;
+    margin-top: 14px;
+    margin-bottom: 22px;
+}
+
+.footnote {
+    border-top: 1px solid #1e2530;
+    padding-top: 16px;
+    margin-top: 16px;
+    color: #64748b;
+    font-size: 0.78rem;
+    line-height: 1.6;
+}
 
     [data-baseweb="slider"] * {
         accent-color: #d7b38a !important;
