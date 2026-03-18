@@ -415,6 +415,10 @@ init_state()
 st.markdown(
     """
     <style>
+    label[data-testid="stWidgetLabel"] p {
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    }
     .stApp {
         background: #0a0c10;
         color: #e2e8f0;
@@ -595,7 +599,7 @@ st.markdown(
 # =========================
 # Параметры периода
 # =========================
-default_from = date(2018, 1, 1)
+default_from = date(2025, 1, 1)
 default_to = date.today()
 
 with st.expander("Период расчета", expanded=False):
