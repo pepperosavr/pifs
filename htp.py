@@ -661,7 +661,7 @@ if st.session_state.re_on != st.session_state.prev_re_on:
 if st.session_state.re_on:
     st.markdown(
         "<div class='banner'><strong>Складская недвижимость добавлена.</strong> "
-        "Метрики считаются уже по реальному историческому окну, где доступны данные MREF.</div>",
+        "Низкая корреляция с акциями — портфель становится устойчивее без потери доходности.</div>",
         unsafe_allow_html=True,
     )
 
