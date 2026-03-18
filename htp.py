@@ -93,12 +93,21 @@ ASSETS = {
 BASE = ["IMOEX", "RGBI", "MCFTR", "RUCBTR"]
 ALL = ["IMOEX", "RGBI", "MCFTR", "RUCBTR", "MREF"]
 RF = 0.16
+
 BASELINE = {
     "IMOEX": 40,
     "RGBI": 25,
     "MCFTR": 20,
     "RUCBTR": 15,
     "MREF": 0,
+}
+
+MREF_PORTFOLIO = {
+    "IMOEX": 34,
+    "RGBI": 21,
+    "MCFTR": 17,
+    "RUCBTR": 13,
+    "MREF": 15,
 }
 
 METRIC_DEFS = [
@@ -174,8 +183,10 @@ METRIC_DEFS = [
 def init_state() -> None:
     if "weights" not in st.session_state:
         st.session_state.weights = BASELINE.copy()
+
     if "re_on" not in st.session_state:
         st.session_state.re_on = False
+
     if "prev_re_on" not in st.session_state:
         st.session_state.prev_re_on = False
 
@@ -187,13 +198,7 @@ def init_state() -> None:
 
 def rebalance_for_toggle(enable_mref: bool) -> None:
     if enable_mref:
-        st.session_state.weights = {
-            "IMOEX": 34,
-            "RGBI": 21,
-            "MCFTR": 17,
-            "RUCBTR": 13,
-            "MREF": 15,
-        }
+        st.session_state.weights = MREF_PORTFOLIO.copy()
     else:
         st.session_state.weights = BASELINE.copy()
 
@@ -272,6 +277,7 @@ st.markdown(
     .stApp {
         background: #0a0c10;
         color: #e2e8f0;
+        --primary-color: #d7b38a;
     }
 
     .block-container {
@@ -284,19 +290,12 @@ st.markdown(
         color: #e2e8f0;
     }
 
-    
-    .stApp {
-        background: #0a0c10;
-        color: #e2e8f0;
-        --primary-color: #d7b38a;
-    }
-
-/* Карточка toggle через st.container(border=True) */
     div[data-testid="stVerticalBlockBorderWrapper"]:has(.toggle-title) {
         background: linear-gradient(135deg, #121825, #0f1520) !important;
         border: 1px solid rgba(200,168,107,0.55) !important;
         border-radius: 22px !important;
         padding: 12px 18px 10px 18px !important;
+        margin-top: 16px !important;
         margin-bottom: 10px !important;
         box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18) !important;
     }
@@ -335,47 +334,27 @@ st.markdown(
         font-weight: 600 !important;
     }
 
-/* Линия слайдера — бежeвая, без красного */
-    div[data-baseweb="slider"] > div > div,
-    div[data-baseweb="slider"] > div > div > div {
-        background-color: #d7b38a !important;
+    /* Принудительно красим все части слайдера в бежевый */
+    div[data-baseweb="slider"] [data-testid="stThumbValue"] {
+        color: #d7b38a !important;
     }
 
-/* Ползунок */
     div[data-baseweb="slider"] div[role="slider"] {
         background-color: #d7b38a !important;
         border-color: #d7b38a !important;
         box-shadow: 0 0 0 2px rgba(215, 179, 138, 0.25) !important;
     }
 
-    .toggle-title {
-        color: #d8e2f2;
-        font-size: 1.02rem;
-        font-weight: 800;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        margin-bottom: 6px;
-        line-height: 1.1;
+    div[data-baseweb="slider"] > div,
+    div[data-baseweb="slider"] > div > div,
+    div[data-baseweb="slider"] > div > div > div,
+    div[data-baseweb="slider"] > div > div > div > div {
+        background-color: #d7b38a !important;
+        border-color: #d7b38a !important;
     }
 
-    .toggle-name {
-        color: #e5e7eb;
-        font-size: 0.98rem;
-        font-weight: 700;
-        margin-bottom: 4px;
-        line-height: 1.2;
-    }
-
-    .toggle-sub {
-        color: #94a3b8;
-        font-size: 0.80rem;
-        line-height: 1.35;
-    }
-
-    div[data-testid="stToggle"] label,
-    div[data-testid="stToggle"] p {
-        color: #ffffff !important;
-        font-weight: 600 !important;
+    [data-baseweb="slider"] * {
+        accent-color: #d7b38a !important;
     }
 
     .banner {
@@ -436,18 +415,6 @@ st.markdown(
 
     .asset-stat-light {
         color: #cbd5e1;
-    }
-
-    /* Трек слайдера */
-    div[data-baseweb="slider"] > div > div {
-        background-color: #374151 !important;
-    }
-
-    /* Ползунок */
-    div[data-baseweb="slider"] div[role="slider"] {
-        background-color: #d7b38a !important;
-        border-color: #d7b38a !important;
-        box-shadow: 0 0 0 2px rgba(215, 179, 138, 0.25) !important;
     }
 
     .metric-card {
@@ -571,7 +538,6 @@ for idx, ticker in enumerate(active_tickers):
             label=f"Вес {ticker}",
             min_value=0,
             max_value=asset["max"],
-            value=int(st.session_state[f"slider_{ticker}"]),
             step=1,
             format="%d%%",
             key=f"slider_{ticker}",
@@ -617,7 +583,9 @@ else:
         delta_html = "<div class='metric-delta zero'></div>"
         if st.session_state.re_on:
             base_value = baseline_metrics[md["key"]] * md["mult"]
-            delta_text, delta_css = format_delta(md["key"], value, base_value, md["dec"], md["suf"])
+            delta_text, delta_css = format_delta(
+                md["key"], value, base_value, md["dec"], md["suf"]
+            )
             delta_html = f"<div class='metric-delta {delta_css}'>{delta_text}</div>"
 
         with metric_cols[idx % 3]:
@@ -652,7 +620,10 @@ if st.session_state.re_on:
 st.markdown(
     """
     <div class='footnote'>
-    Данные смоделированы на исторических параметрах индексов Московской биржи (2018–2024). IMOEX, RGBI, MCFTR, RUCBTR — официальные индексы МосБиржи. MREF — индекс складской и индустриальной недвижимости МосБиржи. Безрисковая ставка для коэффициентов Шарпа и Сортино принята равной 16%.<br>
+    Данные смоделированы на исторических параметрах индексов Московской биржи (2018–2024).
+    IMOEX, RGBI, MCFTR, RUCBTR — официальные индексы МосБиржи.
+    MREF — индекс складской и индустриальной недвижимости МосБиржи.
+    Безрисковая ставка для коэффициентов Шарпа и Сортино принята равной 16%.<br>
     Расчеты носят иллюстративный характер и не являются инвестиционной рекомендацией.
     </div>
     """,
