@@ -247,10 +247,19 @@ def metric_class(direction: int, value: float, good_thr: float, ok_thr: float) -
     return "bad"
 
 
-def format_delta(diff: float, dec: int, suffix: str) -> tuple[str, str]:
+def format_delta(metric_key: str, current_value: float, base_value: float, dec: int, suffix: str) -> tuple[str, str]:
+    diff = current_value - base_value
     icon = "▲" if diff >= 0 else "▼"
     sign = "+" if diff >= 0 else ""
-    css = "pos" if diff >= 0 else "neg"
+
+    if metric_key == "vol":
+        improved = current_value < base_value
+    elif metric_key == "mdd":
+        improved = abs(current_value) < abs(base_value)
+    else:
+        improved = current_value > base_value
+
+    css = "pos" if improved else "neg"
     return f"{icon} {sign}{diff:.{dec}f}{suffix} vs базовый", css
 
 
@@ -275,18 +284,43 @@ st.markdown(
         color: #e2e8f0;
     }
 
+    .top-card {
+        background: linear-gradient(135deg, #121825, #0f1520);
+        border: 1px solid rgba(200,168,107,0.55);
+        border-radius: 22px;
+        padding: 18px 22px 16px 22px;
+        margin-bottom: 10px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+    }
+
+    .toggle-title {
+        color: #d8e2f2;
+        font-size: 1.02rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+        line-height: 1.1;
+    }
+
+    .toggle-name {
+        color: #e5e7eb;
+        font-size: 0.98rem;
+        font-weight: 700;
+        margin-bottom: 4px;
+        line-height: 1.2;
+    }
+
+    .toggle-sub {
+        color: #94a3b8;
+        font-size: 0.80rem;
+        line-height: 1.35;
+    }
+
     div[data-testid="stToggle"] label,
     div[data-testid="stToggle"] p {
         color: #ffffff !important;
         font-weight: 600 !important;
-    }
-
-    .top-card {
-        background: #161b23;
-        border: 1px solid #1e2530;
-        border-radius: 16px;
-        padding: 18px 22px;
-        margin-bottom: 10px;
     }
 
     .banner {
@@ -349,6 +383,12 @@ st.markdown(
         color: #cbd5e1;
     }
 
+    /* Трек слайдера */
+    div[data-baseweb="slider"] > div > div {
+        background-color: #374151 !important;
+    }
+
+    /* Ползунок */
     div[data-baseweb="slider"] div[role="slider"] {
         background-color: #d7b38a !important;
         border-color: #d7b38a !important;
@@ -435,11 +475,16 @@ with col_left:
 
 with col_right:
     st.markdown("<div class='top-card'>", unsafe_allow_html=True)
-    st.toggle(
-        "Добавить недвижимость · MREF",
-        key="re_on",
-        help="Индекс складской и индустриальной недвижимости МосБиржи",
-    )
+    tcol1, tcol2 = st.columns([4.2, 1.1], vertical_alignment="center")
+    with tcol1:
+        st.markdown("<div class='toggle-title'>ДОБАВИТЬ НЕДВИЖИМОСТЬ</div>", unsafe_allow_html=True)
+        st.markdown("<div class='toggle-name'>MREF  •  Складская недвижимость</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='toggle-sub'>Индекс складской и индустриальной недвижимости МосБиржи</div>",
+            unsafe_allow_html=True,
+        )
+    with tcol2:
+        st.toggle("toggle_mref", key="re_on", label_visibility="collapsed")
     st.markdown("</div>", unsafe_allow_html=True)
 
 if st.session_state.re_on != st.session_state.prev_re_on:
@@ -474,6 +519,7 @@ for idx, ticker in enumerate(active_tickers):
             max_value=asset["max"],
             value=int(st.session_state[f"slider_{ticker}"]),
             step=1,
+            format="%d%%",
             key=f"slider_{ticker}",
             label_visibility="collapsed",
         )
@@ -517,8 +563,7 @@ else:
         delta_html = "<div class='metric-delta zero'></div>"
         if st.session_state.re_on:
             base_value = baseline_metrics[md["key"]] * md["mult"]
-            diff = value - base_value
-            delta_text, delta_css = format_delta(diff, md["dec"], md["suf"])
+            delta_text, delta_css = format_delta(md["key"], value, base_value, md["dec"], md["suf"])
             delta_html = f"<div class='metric-delta {delta_css}'>{delta_text}</div>"
 
         with metric_cols[idx % 3]:
@@ -553,7 +598,10 @@ if st.session_state.re_on:
 st.markdown(
     """
     <div class='footnote'>
-    Данные смоделированы на исторических параметрах индексов Московской биржи (2018–2024). IMOEX, RGBI, MCFTR, RUCBTR — официальные индексы МосБиржи. MREF — индекс складской и индустриальной недвижимости МосБиржи. Безрисковая ставка для коэффициентов Шарпа и Сортино принята равной 16%.<br>
+    Данные смоделированы на исторических параметрах индексов Московской биржи (2018–2024).<br>
+    IMOEX, RGBI, MCFTR, RUCBTR — официальные индексы МосБиржи.<br>
+    MREF — индекс складской и индустриальной недвижимости МосБиржи.<br>
+    Безрисковая ставка для коэффициентов Шарпа и Сортино принята равной 16%.<br>
     Расчеты носят иллюстративный характер и не являются инвестиционной рекомендацией.
     </div>
     """,
