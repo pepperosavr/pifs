@@ -158,13 +158,14 @@ def init_state() -> None:
         slider_key = f"slider_{t}"
         if slider_key not in st.session_state:
             st.session_state[slider_key] = st.session_state.weights[t]
-    
+
     old_slider_keys = [
-        "slider_MCFTR",
-        "slider_RGBI",
-        "slider_MCFTR",
-        "slider_MREF",
+    "slider_IMOEX",
+    "slider_IMOEXTR",
+    "slider_RGBI",
+    "slider_MREF",
     ]
+    
     for k in old_slider_keys:
         if k in st.session_state:
             del st.session_state[k]
