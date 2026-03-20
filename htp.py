@@ -22,7 +22,7 @@ RF = 0.16
 # Индексы 
 # =========================
 INDEX_META: Dict[str, dict] = {
-    "IMOEXTR": {
+    "MCFTR": {
         "name": "Индекс МосБиржи полной доходности",
         "ui_label": "MCFTR",
         "aliases": ["MCFTR"], 
@@ -52,18 +52,18 @@ INDEX_META: Dict[str, dict] = {
     },
 }
 
-BASE = ["IMOEXTR", "RGBITR", "RUCBTR"]
-ALL = ["IMOEXTR", "RGBITR", "RUCBTR", "MREFTR"]
+BASE = ["MCFTR", "RGBITR", "RUCBTR"]
+ALL = ["MCFTR", "RGBITR", "RUCBTR", "MREFTR"]
 
 BASELINE = {
-    "IMOEXTR": 50,
+    "MCFTR": 50,
     "RGBITR": 31,
     "RUCBTR": 19,
     "MREFTR": 0,
 }
 
 MREF_PORTFOLIO = {
-    "IMOEXTR": 43,
+    "MCFTR": 43,
     "RGBITR": 26,
     "RUCBTR": 16,
     "MREFTR": 15,
