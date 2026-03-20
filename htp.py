@@ -15,8 +15,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.cache_data.clear()
-
 ISS_BASE = "https://iss.moex.com/iss"
 RF = 0.16  
 
@@ -165,7 +163,6 @@ def init_state() -> None:
         slider_key = f"slider_{t}"
         if slider_key not in st.session_state:
             st.session_state[slider_key] = st.session_state.weights[t]
-
     
     old_slider_keys = [
         "slider_IMOEX",
@@ -199,10 +196,7 @@ def _iss_get(url: str, params: dict | None = None) -> dict:
 
 @st.cache_data(ttl=24 * 60 * 60)
 def resolve_board(secid: str) -> Tuple[str, str, str]:
-    """
-    Подбор режима торгов для индекса:
-    security -> boards -> приоритет traded/index.
-    """
+
     j = _iss_get(
         f"{ISS_BASE}/securities/{secid}.json",
         params={"iss.meta": "off", "iss.only": "boards"},
@@ -328,6 +322,7 @@ def load_all_index_data(d_from: date, d_to: date):
 # =========================
 # Метрики
 # =========================
+
 def asset_stats_from_raw(df: pd.DataFrame) -> Tuple[float, float] | None:
     s = df.sort_values("tradedate")["close"].astype(float)
     rets = s.pct_change().dropna()
@@ -420,9 +415,6 @@ def format_delta(metric_key: str, current_value: float, base_value: float, dec: 
     return f"{icon} {sign}{diff:.{dec}f}{suffix} vs базовый", css
 
 
-# =========================
-# UI state
-# =========================
 init_state()
 
 # =========================
@@ -612,9 +604,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# =========================
-# Параметры периода
-# =========================
+
 default_from = date(2025, 1, 1)
 default_to = date.today()
 
@@ -629,9 +619,7 @@ if d_from >= d_to:
     st.error("Дата начала должна быть раньше даты окончания.")
     st.stop()
 
-# =========================
-# Загрузка данных
-# =========================
+
 with st.spinner("Загружаю ряды индексов..."):
     try:
         prices, resolved_map, raw_map = load_all_index_data(d_from, d_to)
@@ -644,9 +632,6 @@ for key in ALL:
     stats = asset_stats_from_raw(raw_map[key])
     asset_stats[key] = stats
 
-# =========================
-# Заголовок
-# =========================
 col_left, col_right = st.columns([3.2, 2])
 
 with col_left:
@@ -683,6 +668,7 @@ if st.session_state.re_on:
 # =========================
 # Карточки активов
 # =========================
+
 st.markdown("<div class='section-title'>Распределение активов</div>", unsafe_allow_html=True)
 
 active_tickers = ALL if st.session_state.re_on else BASE
@@ -733,9 +719,6 @@ if not st.session_state.re_on:
 
 current_total = sum(st.session_state.weights[t] for t in active_tickers)
 
-# =========================
-# Окно анализа
-# =========================
 price_window = prepare_window(prices, active_tickers)
 
 if price_window.empty or len(price_window) < 3:
@@ -786,9 +769,6 @@ else:
                 unsafe_allow_html=True,
             )
 
-# =========================
-# Объясняющий блок
-# =========================
 if st.session_state.re_on:
     st.markdown(
         """
