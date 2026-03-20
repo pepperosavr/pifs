@@ -142,8 +142,15 @@ METRIC_DEFS = [
 # State
 # =========================
 def init_state() -> None:
+    expected_keys = set(ALL)
+
+   
     if "weights" not in st.session_state:
         st.session_state.weights = BASELINE.copy()
+    else:
+        current_keys = set(st.session_state.weights.keys())
+        if current_keys != expected_keys:
+            st.session_state.weights = BASELINE.copy()
 
     if "re_on" not in st.session_state:
         st.session_state.re_on = False
@@ -151,11 +158,22 @@ def init_state() -> None:
     if "prev_re_on" not in st.session_state:
         st.session_state.prev_re_on = False
 
+    
     for t in ALL:
         slider_key = f"slider_{t}"
         if slider_key not in st.session_state:
             st.session_state[slider_key] = st.session_state.weights[t]
 
+    
+    old_slider_keys = [
+        "slider_IMOEX",
+        "slider_RGBI",
+        "slider_MCFTR",
+        "slider_MREF",
+    ]
+    for k in old_slider_keys:
+        if k in st.session_state:
+            del st.session_state[k]
 
 def rebalance_for_toggle(enable_mref: bool) -> None:
     if enable_mref:
@@ -666,7 +684,7 @@ if st.session_state.re_on:
 st.markdown("<div class='section-title'>Распределение активов</div>", unsafe_allow_html=True)
 
 active_tickers = ALL if st.session_state.re_on else BASE
-cols = st.columns(5 if st.session_state.re_on else 4)
+cols = st.columns(len(active_tickers))
 
 for idx, ticker in enumerate(active_tickers):
     meta = INDEX_META[ticker]
@@ -708,8 +726,8 @@ for idx, ticker in enumerate(active_tickers):
             st.markdown("<div class='asset-stat'>Недостаточно данных</div>", unsafe_allow_html=True)
 
 if not st.session_state.re_on:
-    st.session_state.weights["MREF"] = 0
-    st.session_state["slider_MREF"] = 0
+    st.session_state.weights["MREFTR"] = 0
+    st.session_state["slider_MREFTR"] = 0
 
 current_total = sum(st.session_state.weights[t] for t in active_tickers)
 
