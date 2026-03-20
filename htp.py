@@ -653,7 +653,7 @@ with col_right:
         tcol1, tcol2 = st.columns([4.2, 1.1], vertical_alignment="center")
         with tcol1:
             st.markdown("<div class='toggle-title'>ДОБАВИТЬ НЕДВИЖИМОСТЬ</div>", unsafe_allow_html=True)
-            st.markdown("<div class='toggle-name'>MREF • Складская недвижимость</div>", unsafe_allow_html=True)
+            st.markdown("<div class='toggle-name'>MREFTR • Складская недвижимость</div>", unsafe_allow_html=True)
             st.markdown(
                 "<div class='toggle-sub'>Индекс МосБиржи фондов недвижимости полной доходности</div>",
                 unsafe_allow_html=True,
