@@ -15,8 +15,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.cache_data.clear()
-
 ISS_BASE = "https://iss.moex.com/iss"
 RF = 0.16  
 
@@ -58,16 +56,16 @@ BASE = ["IMOEXTR", "RGBITR", "RUCBTR"]
 ALL = ["IMOEXTR", "RGBITR", "RUCBTR", "MREFTR"]
 
 BASELINE = {
-    "IMOEXTR": 47,
-    "RGBITR": 29,
-    "RUCBTR": 24,
+    "IMOEXTR": 50,
+    "RGBITR": 31,
+    "RUCBTR": 19,
     "MREFTR": 0,
 }
 
 MREF_PORTFOLIO = {
-    "IMOEXTR": 40,
-    "RGBITR": 24,
-    "RUCBTR": 21,
+    "IMOEXTR": 43,
+    "RGBITR": 26,
+    "RUCBTR": 16,
     "MREFTR": 15,
 }
 
