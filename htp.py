@@ -160,7 +160,7 @@ def init_state() -> None:
             st.session_state[slider_key] = st.session_state.weights[t]
     
     old_slider_keys = [
-        "slider_IMOEX",
+        "slider_MCFTR",
         "slider_RGBI",
         "slider_MCFTR",
         "slider_MREF",
