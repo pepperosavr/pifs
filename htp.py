@@ -20,10 +20,10 @@ RF = 0.16
 # =========================
 
 INDEX_META: Dict[str, dict] = {
-    "MCFTR": {
-        "name": "Индекс МосБиржи полной доходности",
-        "ui_label": "MCFTR",
-        "aliases": ["MCFTR"], 
+    "IMOEX": {
+        "name": "Индекс МосБиржи",
+        "ui_label": "IMOEX",
+        "aliases": ["IMOEX"],
         "color": "#c8a86b",
         "max": 80,
     },
@@ -34,6 +34,13 @@ INDEX_META: Dict[str, dict] = {
         "color": "#64748b",
         "max": 80,
     },
+    "RUGOLD": {
+        "name": "Индекс МосБиржи аффинированного золота",
+        "ui_label": "RUGOLD",
+        "aliases": ["RUGOLD"],
+        "color": "#d4af37",
+        "max": 80,
+    },
     "RUCBTR": {
         "name": "Корп. облигации, совокупный доход",
         "ui_label": "RUCBTR",
@@ -41,6 +48,7 @@ INDEX_META: Dict[str, dict] = {
         "color": "#94a3b8",
         "max": 80,
     },
+    
     "MREFTR": {
         "name": "Индекс МосБиржи фондов недвижимости полной доходности",
         "ui_label": "MREFTR",
@@ -50,20 +58,22 @@ INDEX_META: Dict[str, dict] = {
     },
 }
 
-BASE = ["MCFTR", "RGBITR", "RUCBTR"]
-ALL = ["MCFTR", "RGBITR", "RUCBTR", "MREFTR"]
+BASE = ["IMOEX", "RGBITR", "RUGOLD", "RUCBTR"]
+ALL = ["IMOEX", "RGBITR", "RUGOLD", "RUCBTR", "MREFTR"]
 
 BASELINE = {
-    "MCFTR": 50,
-    "RGBITR": 31,
-    "RUCBTR": 19,
+    "IMOEX": 40,
+    "RGBITR": 25,
+    "RUGOLD": 20,
+    "RUCBTR": 15,
     "MREFTR": 0,
 }
 
 MREF_PORTFOLIO = {
-    "MCFTR": 43,
-    "RGBITR": 26,
-    "RUCBTR": 16,
+    "IMOEX": 34,
+    "RGBITR": 21,
+    "RUGOLD": 17,
+    "RUCBTR": 13,
     "MREFTR": 15,
 }
 
@@ -160,11 +170,11 @@ def init_state() -> None:
             st.session_state[slider_key] = st.session_state.weights[t]
 
     old_slider_keys = [
-    "slider_IMOEX",
+    "slider_MCFTR",
     "slider_IMOEXTR",
     "slider_RGBI",
     "slider_MREF",
-    ]
+]
     
     for k in old_slider_keys:
         if k in st.session_state:
@@ -787,7 +797,7 @@ if st.session_state.re_on:
 st.markdown(
     """
     <div class='footnote'>
-    Источник данных: ISS Московской биржи. Метрики рассчитываются по историческим дневным значениям индексов за выбранный период. MCFTR, RGBITR, RUCBTR — официальные индексы МосБиржи. MREFTR — индекс МосБиржи фондов недвижимости полной доходности, отражающий совокупную доходность фондов, инвестирующих в объекты складской и индустриальной недвижимости, с учетом изменения рыночной стоимости и доходных выплат. Безрисковая ставка для коэффициентов Шарпа и Сортино принята равной 16% (ключевая ставка ЦБ РФ).
+    Источник данных: ISS Московской биржи. Метрики рассчитываются по историческим дневным значениям индексов за выбранный период. IMOEX, RGBITR, RUGOLD, RUCBTRNS — официальные индексы МосБиржи. MREFTR — индекс МосБиржи фондов недвижимости полной доходности, отражающий совокупную доходность фондов, инвестирующих в объекты складской и индустриальной недвижимости, с учетом изменения рыночной стоимости и доходных выплат. Безрисковая ставка для коэффициентов Шарпа и Сортино принята равной 16% (ключевая ставка ЦБ РФ).
     Расчеты носят аналитический характер и не являются инвестиционной рекомендацией.
     </div>
     """,
