@@ -12,6 +12,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+st.cache_data.clear()
+
 ISS_BASE = "https://iss.moex.com/iss"
 RF = 0.16  
 
