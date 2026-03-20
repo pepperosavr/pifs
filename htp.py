@@ -6,9 +6,6 @@ import pandas as pd
 import requests
 import streamlit as st
 
-# =========================
-# Настройки приложения
-# =========================
 st.set_page_config(
     page_title="Портфель российских индексов",
     layout="wide",
@@ -21,6 +18,7 @@ RF = 0.16
 # =========================
 # Индексы 
 # =========================
+
 INDEX_META: Dict[str, dict] = {
     "MCFTR": {
         "name": "Индекс МосБиржи полной доходности",
@@ -138,9 +136,6 @@ METRIC_DEFS = [
     },
 ]
 
-# =========================
-# State
-# =========================
 def init_state() -> None:
     expected_keys = set(ALL)
 
@@ -185,8 +180,9 @@ def rebalance_for_toggle(enable_mref: bool) -> None:
 
 
 # =========================
-# ISS helpers
+# ISS
 # =========================
+
 @st.cache_data(ttl=24 * 60 * 60)
 def _iss_get(url: str, params: dict | None = None) -> dict:
     r = requests.get(url, params=params, timeout=30)
