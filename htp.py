@@ -22,55 +22,51 @@ RF = 0.16
 # Индексы 
 # =========================
 INDEX_META: Dict[str, dict] = {
-    "IMOEX": {
+    "IMOEXTR": {
         "name": "Индекс МосБиржи",
-        "aliases": ["IMOEX"],
+        "ui_label": "IMOEX",
+        "aliases": ["MCFTR"],   # total return-аналог IMOEX
         "color": "#c8a86b",
         "max": 80,
     },
-    "RGBI": {
-        "name": "Гос. облигации (ОФЗ)",
-        "aliases": ["RGBI"],
+    "RGBITR": {
+        "name": "Гос. облигации (ОФЗ), совокупный доход",
+        "ui_label": "RGBI TR",
+        "aliases": ["RGBITR"],
         "color": "#64748b",
         "max": 80,
     },
-    "MCFTR": {
-        "name": "МосБиржа полной доходности",
-        "aliases": ["MCFTR"],
-        "color": "#f59e0b",
-        "max": 80,
-    },
     "RUCBTR": {
-        "name": "Корп. облигации",
-        "aliases": ["RUCBTR", "RUCBTRNS"],  # fallback
+        "name": "Корп. облигации, совокупный доход",
+        "ui_label": "RUCBTR",
+        "aliases": ["RUCBTRNS"],
         "color": "#94a3b8",
         "max": 80,
     },
-    "MREF": {
-        "name": "Складская и индустриальная недвижимость",
-        "aliases": ["MREF"],
+    "MREFTR": {
+        "name": "Фонды недвижимости полной доходности",
+        "ui_label": "MREF TR",
+        "aliases": ["MREFTR"],
         "color": "#2dd4bf",
         "max": 40,
     },
 }
 
-BASE = ["IMOEX", "RGBI", "MCFTR", "RUCBTR"]
-ALL = ["IMOEX", "RGBI", "MCFTR", "RUCBTR", "MREF"]
+BASE = ["IMOEXTR", "RGBITR", "RUCBTR"]
+ALL = ["IMOEXTR", "RGBITR", "RUCBTR", "MREFTR"]
 
 BASELINE = {
-    "IMOEX": 40,
-    "RGBI": 25,
-    "MCFTR": 20,
-    "RUCBTR": 15,
-    "MREF": 0,
+    "IMOEXTR": 47,
+    "RGBITR": 29,
+    "RUCBTR": 24,
+    "MREFTR": 0,
 }
 
 MREF_PORTFOLIO = {
-    "IMOEX": 34,
-    "RGBI": 21,
-    "MCFTR": 17,
-    "RUCBTR": 13,
-    "MREF": 15,
+    "IMOEXTR": 40,
+    "RGBITR": 24,
+    "RUCBTR": 21,
+    "MREFTR": 15,
 }
 
 METRIC_DEFS = [
@@ -677,7 +673,7 @@ for idx, ticker in enumerate(active_tickers):
     with cols[idx]:
         st.markdown(
             f"<div class='asset-card'>"
-            f"<div class='asset-ticker' style='color:{meta['color']}'>{ticker}</div>"
+            f"<div class='asset-ticker' style='color:{meta['color']}'>{meta['ui_label']}</div>"
             f"<div class='asset-name'>{meta['name']}</div>",
             unsafe_allow_html=True,
         )
