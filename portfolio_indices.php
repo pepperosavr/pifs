@@ -738,7 +738,7 @@ if ($loadError === null && $errors === []) {
         $actualEnd = $priceWindow[count($priceWindow) - 1]['tradedate'];
     }
 
-    if ($errors === [] && abs($currentTotal - 100) <= 1) {
+    if ($errors === [] && $currentTotal === 100) {
         $currentMetrics = calc_portfolio_metrics($priceWindow, $_SESSION['weights'], $ALL);
         $baselineMetrics = calc_portfolio_metrics($priceWindow, $BASELINE, $ALL);
     }
@@ -1136,12 +1136,12 @@ if ($loadError === null && $errors === []) {
             <div
                 class="alert"
                 id="sum-warning"
-                style="<?= abs($currentTotal - 100) > 1 ? '' : 'display:none;' ?>"
+                style="<?= $currentTotal !== 100 ? '' : 'display:none;' ?>"
             >
                 Сумма весов не равна 100%. Текущая сумма: <span id="sum-warning-total"><?= (int) $currentTotal ?></span>%
             </div>
 
-            <?php if (abs($currentTotal - 100) <= 1 && is_array($currentMetrics) && is_array($baselineMetrics)): ?>
+            <?php if ($currentTotal === 100 && is_array($currentMetrics) && is_array($baselineMetrics)): ?>
                 <div class="section-title">Портфельные метрики</div>
                 <div class="metric-grid">
                     <?php foreach ($METRIC_DEFS as $md): ?>
@@ -1212,7 +1212,7 @@ if ($loadError === null && $errors === []) {
 
         var sum = getSliderSum();
 
-        if (Math.abs(sum - 100) > 1) {
+        if (sum !== 100) {
             sumWarning.style.display = '';
             if (sumWarningTotal) {
                 sumWarningTotal.textContent = sum;
