@@ -8,6 +8,8 @@ const ISS_BASE = 'https://iss.moex.com/iss';
 const RF = 0.16;
 const CACHE_TTL = 86400;
 
+const STATE_VERSION = 'portfolio_widget_v2';
+
 $INDEX_META = [
     'IMOEX' => [
         'name' => 'Индекс МосБиржи',
@@ -155,19 +157,56 @@ function cache_dir(): string
     return $dir;
 }
 
-function init_state(array $all, array $baseline): void
+function init_state(array $all, array $baseline, string $defaultFrom, string $defaultTo): void
 {
     $expectedKeys = $all;
     sort($expectedKeys);
 
+    $needReset = false;
+
+    if (!isset($_SESSION['state_version']) || $_SESSION['state_version'] !== STATE_VERSION) {
+        $needReset = true;
+    }
+
     if (!isset($_SESSION['weights']) || !is_array($_SESSION['weights'])) {
-        $_SESSION['weights'] = $baseline;
+        $needReset = true;
     } else {
         $currentKeys = array_keys($_SESSION['weights']);
         sort($currentKeys);
         if ($currentKeys !== $expectedKeys) {
-            $_SESSION['weights'] = $baseline;
+            $needReset = true;
         }
+    }
+
+    if ($needReset) {
+        unset(
+            $_SESSION['weights'],
+            $_SESSION['re_on'],
+            $_SESSION['prev_re_on'],
+            $_SESSION['date_from'],
+            $_SESSION['date_to']
+        );
+
+        foreach ($all as $ticker) {
+            unset($_SESSION['slider_' . $ticker]);
+        }
+
+        foreach (['slider_MCFTR', 'slider_IMOEXTR', 'slider_RGBI', 'slider_MREF'] as $oldKey) {
+            unset($_SESSION[$oldKey]);
+        }
+
+        $_SESSION['weights'] = $baseline;
+        $_SESSION['re_on'] = false;
+        $_SESSION['prev_re_on'] = false;
+        $_SESSION['date_from'] = $defaultFrom;
+        $_SESSION['date_to'] = $defaultTo;
+
+        foreach ($all as $ticker) {
+            $_SESSION['slider_' . $ticker] = (int) ($baseline[$ticker] ?? 0);
+        }
+
+        $_SESSION['state_version'] = STATE_VERSION;
+        return;
     }
 
     if (!isset($_SESSION['re_on'])) {
@@ -176,6 +215,14 @@ function init_state(array $all, array $baseline): void
 
     if (!isset($_SESSION['prev_re_on'])) {
         $_SESSION['prev_re_on'] = false;
+    }
+
+    if (!isset($_SESSION['date_from'])) {
+        $_SESSION['date_from'] = $defaultFrom;
+    }
+
+    if (!isset($_SESSION['date_to'])) {
+        $_SESSION['date_to'] = $defaultTo;
     }
 
     foreach ($all as $ticker) {
@@ -205,6 +252,7 @@ function iss_get(string $url, ?array $params = null): array
 {
     $params = $params ?? [];
     ksort($params);
+
     $cacheKey = sha1($url . '|' . http_build_query($params));
     $cacheFile = cache_dir() . DIRECTORY_SEPARATOR . $cacheKey . '.json';
 
@@ -223,32 +271,32 @@ function iss_get(string $url, ?array $params = null): array
         $fullUrl .= '?' . http_build_query($params);
     }
 
-    $ch = curl_init($fullUrl);
-    if ($ch === false) {
-        throw new RuntimeException('Не удалось инициализировать cURL.');
-    }
-
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_HTTPGET => true,
-        CURLOPT_USERAGENT => 'PortfolioRussianIndexesPHP/1.0',
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'timeout' => 30,
+            'ignore_errors' => true,
+            'header' => implode("\r\n", [
+                'User-Agent: PortfolioRussianIndexesPHP/1.0',
+                'Accept: application/json',
+            ]),
+        ],
     ]);
 
-    $body = curl_exec($ch);
+    $body = file_get_contents($fullUrl, false, $context);
     if ($body === false) {
-        $error = curl_error($ch);
-        curl_close($ch);
-        throw new RuntimeException('Ошибка запроса к ISS: ' . $error);
+        throw new RuntimeException('Ошибка запроса к ISS через file_get_contents().');
     }
 
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    $statusCode = 0;
+    if (isset($http_response_header) && is_array($http_response_header) && isset($http_response_header[0])) {
+        if (preg_match('~HTTP/\S+\s+(\d{3})~', $http_response_header[0], $m)) {
+            $statusCode = (int) $m[1];
+        }
+    }
 
-    if ($status >= 400) {
-        throw new RuntimeException('ISS вернул HTTP ' . $status);
+    if ($statusCode >= 400) {
+        throw new RuntimeException('ISS вернул HTTP ' . $statusCode);
     }
 
     $decoded = json_decode($body, true);
@@ -256,11 +304,11 @@ function iss_get(string $url, ?array $params = null): array
         throw new RuntimeException('ISS вернул некорректный JSON.');
     }
 
-    
     $encoded = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if ($encoded !== false) {
         @file_put_contents($cacheFile, $encoded);
     }
+
     return $decoded;
 }
 
@@ -651,17 +699,10 @@ function stddev_pop(array $values): float
     return sqrt($sum / count($values));
 }
 
-init_state($ALL, $BASELINE);
-
 $defaultFrom = '2025-01-01';
 $defaultTo = date('Y-m-d');
 
-if (!isset($_SESSION['date_from'])) {
-    $_SESSION['date_from'] = $defaultFrom;
-}
-if (!isset($_SESSION['date_to'])) {
-    $_SESSION['date_to'] = $defaultTo;
-}
+init_state($ALL, $BASELINE, $defaultFrom, $defaultTo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $_SESSION['date_from'] = isset($_POST['date_from']) ? (string) $_POST['date_from'] : $_SESSION['date_from'];
@@ -1045,7 +1086,7 @@ if ($loadError === null && $errors === []) {
     </style>
 </head>
 <body>
-<div class="page">
+<div class="page" id="portfolio-root">
     <form method="post" id="portfolio-form">
         <details class="period">
             <summary>Период расчета</summary>
@@ -1192,65 +1233,105 @@ if ($loadError === null && $errors === []) {
 </form>
 </div>
 <script>
-    var form = document.getElementById('portfolio-form');
-    var toggle = document.getElementById('re_on');
-    var dateFrom = document.getElementById('date_from');
-    var dateTo = document.getElementById('date_to');
-    var sumWarning = document.getElementById('sum-warning');
-    var sumWarningTotal = document.getElementById('sum-warning-total');
+    function bindPortfolioApp() {
+        var root = document.getElementById('portfolio-root');
+        var form = document.getElementById('portfolio-form');
+        if (!root || !form) return;
 
-    function getSliderSum() {
-        var sum = 0;
-        document.querySelectorAll('input[type="range"][data-output]').forEach(function (slider) {
-            sum += parseInt(slider.value, 10) || 0;
-        });
-        return sum;
-    }
+        var toggle = document.getElementById('re_on');
+        var dateFrom = document.getElementById('date_from');
+        var dateTo = document.getElementById('date_to');
+        var sumWarning = document.getElementById('sum-warning');
+        var sumWarningTotal = document.getElementById('sum-warning-total');
 
-    function updateSumWarning() {
-        if (!sumWarning) return;
-
-        var sum = getSliderSum();
-
-        if (sum !== 100) {
-            sumWarning.style.display = '';
-            if (sumWarningTotal) {
-                sumWarningTotal.textContent = sum;
-            }
-        } else {
-            sumWarning.style.display = 'none';
-        }
-    }
-
-    document.querySelectorAll('input[type="range"][data-output]').forEach(function (slider) {
-        var output = document.getElementById(slider.dataset.output);
-
-        function updateSliderUI() {
-            if (output) {
-                output.textContent = slider.value;
-            }
-            updateSumWarning();
+        function getSliderSum() {
+            var sum = 0;
+            form.querySelectorAll('input[type="range"][data-output]').forEach(function (slider) {
+                sum += parseInt(slider.value, 10) || 0;
+            });
+            return sum;
         }
 
-        slider.addEventListener('input', updateSliderUI);
+        function updateSumWarning() {
+            if (!sumWarning) return;
 
-        slider.addEventListener('change', function () {
+            var sum = getSliderSum();
+
+            if (sum !== 100) {
+                sumWarning.style.display = '';
+                if (sumWarningTotal) {
+                    sumWarningTotal.textContent = sum;
+                }
+            } else {
+                sumWarning.style.display = 'none';
+            }
+        }
+
+        function ajaxSubmit() {
+            var formData = new FormData(form);
+
+            fetch(window.location.pathname + window.location.search, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                return response.text();
+            })
+            .then(function (html) {
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(html, 'text/html');
+                var newRoot = doc.getElementById('portfolio-root');
+
+                if (!newRoot) {
+                    throw new Error('Не найден #portfolio-root в ответе');
+                }
+
+                root.replaceWith(newRoot);
+                bindPortfolioApp();
+            })
+            .catch(function () {
+                form.submit();
+            });
+        }
+
+        form.querySelectorAll('input[type="range"][data-output]').forEach(function (slider) {
+            var output = document.getElementById(slider.dataset.output);
+
+            function updateSliderUI() {
+                if (output) {
+                    output.textContent = slider.value;
+                }
+                updateSumWarning();
+            }
+
+            slider.addEventListener('input', updateSliderUI);
+
+            slider.addEventListener('change', function () {
+                updateSliderUI();
+                ajaxSubmit();
+            });
+
             updateSliderUI();
-            form.submit();
         });
 
-        updateSliderUI();
-    });
-
-    [toggle, dateFrom, dateTo].forEach(function (el) {
-        if (!el) return;
-        el.addEventListener('change', function () {
-            updateSumWarning();
-            form.submit();
+        [toggle, dateFrom, dateTo].forEach(function (el) {
+            if (!el) return;
+            el.addEventListener('change', function () {
+                updateSumWarning();
+                ajaxSubmit();
+            });
         });
-    });
 
-    updateSumWarning();
+        updateSumWarning();
+    }
+
+    document.addEventListener('DOMContentLoaded', bindPortfolioApp);
 </script>
 </body>
 </html>
