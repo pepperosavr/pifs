@@ -139,11 +139,18 @@ function h(string $value): string
     return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+function is_valid_date(string $value): bool
+{
+    $dt = DateTime::createFromFormat('Y-m-d', $value);
+    return $dt !== false && $dt->format('Y-m-d') === $value;
+}
+
 function cache_dir(): string
 {
     $dir = __DIR__ . DIRECTORY_SEPARATOR . 'cache';
-    if (!is_dir($dir)) {
-        mkdir($dir, 0775, true);
+    
+    if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+        throw new RuntimeException('Не удалось создать каталог cache.');
     }
     return $dir;
 }
@@ -249,7 +256,11 @@ function iss_get(string $url, ?array $params = null): array
         throw new RuntimeException('ISS вернул некорректный JSON.');
     }
 
-    file_put_contents($cacheFile, json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    
+    $encoded = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($encoded !== false) {
+        @file_put_contents($cacheFile, $encoded);
+    }
     return $decoded;
 }
 
@@ -697,7 +708,9 @@ $actualStart = null;
 $actualEnd = null;
 $currentTotal = 0;
 
-if ($dFrom >= $dTo) {
+if (!is_valid_date($dFrom) || !is_valid_date($dTo)) {
+    $errors[] = 'Некорректный формат даты.';
+} elseif ($dFrom >= $dTo) {
     $errors[] = 'Дата начала должна быть раньше даты окончания.';
 } else {
     try {
@@ -1120,37 +1133,44 @@ if ($loadError === null && $errors === []) {
 
 
     <?php if ($loadError === null && $errors === []): ?>
-        <?php if (abs($currentTotal - 100) > 1): ?>
-            <div class="alert">Сумма весов не равна 100%. Текущая сумма: <?= (int) $currentTotal ?>%</div>
-        <?php elseif (is_array($currentMetrics) && is_array($baselineMetrics)): ?>
-            <div class="section-title">Портфельные метрики</div>
-            <div class="metric-grid">
-                <?php foreach ($METRIC_DEFS as $md): ?>
-                    <?php
-                        $raw = (float) $currentMetrics[$md['key']];
-                        $value = $raw * (float) $md['mult'];
-                        if ($value < 0) {
-                            $cssClass = 'bad';
-                        } else {
-                            $cssClass = metric_class((int) $md['dir'], $value, (float) $md['gt'], (float) $md['ot']);
-                        }
-                        $deltaHtml = '<div class="metric-delta zero"></div>';
-                        if ($reOn) {
-                            $baseValue = (float) $baselineMetrics[$md['key']] * (float) $md['mult'];
-                            [$deltaText, $deltaCss] = format_delta((string) $md['key'], $value, $baseValue, (int) $md['dec'], (string) $md['suf']);
-                            $deltaHtml = '<div class="metric-delta ' . h($deltaCss) . '">' . h($deltaText) . '</div>';
-                        }
-                    ?>
-                    <div class="metric-card">
-                        <div class="metric-label"><?= h($md['label']) ?></div>
-                        <div class="metric-value <?= h($cssClass) ?>"><?= number_format($value, (int) $md['dec'], '.', '') . h($md['suf']) ?></div>
-                        <?= $deltaHtml ?>
-                        <div class="metric-desc"><?= h($md['desc']) ?></div>
-                    </div>
-                <?php endforeach; ?>
+            <div
+                class="alert"
+                id="sum-warning"
+                style="<?= abs($currentTotal - 100) > 1 ? '' : 'display:none;' ?>"
+            >
+                Сумма весов не равна 100%. Текущая сумма: <span id="sum-warning-total"><?= (int) $currentTotal ?></span>%
             </div>
+
+            <?php if (abs($currentTotal - 100) <= 1 && is_array($currentMetrics) && is_array($baselineMetrics)): ?>
+                <div class="section-title">Портфельные метрики</div>
+                <div class="metric-grid">
+                    <?php foreach ($METRIC_DEFS as $md): ?>
+                        <?php
+                            $raw = (float) $currentMetrics[$md['key']];
+                            $value = $raw * (float) $md['mult'];
+                            if ($value < 0) {
+                                $cssClass = 'bad';
+                            } else {
+                                $cssClass = metric_class((int) $md['dir'], $value, (float) $md['gt'], (float) $md['ot']);
+                            }
+                            $deltaHtml = '<div class="metric-delta zero"></div>';
+                            if ($reOn) {
+                                $baseValue = (float) $baselineMetrics[$md['key']] * (float) $md['mult'];
+                                [$deltaText, $deltaCss] = format_delta((string) $md['key'], $value, $baseValue, (int) $md['dec'], (string) $md['suf']);
+                                $deltaHtml = '<div class="metric-delta ' . h($deltaCss) . '">' . h($deltaText) . '</div>';
+                            }
+                        ?>
+                        <div class="metric-card">
+                            <div class="metric-label"><?= h($md['label']) ?></div>
+                            <div class="metric-value <?= h($cssClass) ?>"><?= number_format($value, (int) $md['dec'], '.', '') . h($md['suf']) ?></div>
+                            <?= $deltaHtml ?>
+                            <div class="metric-desc"><?= h($md['desc']) ?></div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         <?php endif; ?>
-    <?php endif; ?>
+
 
     <?php if ($reOn): ?>
         <div class="insight">
@@ -1169,28 +1189,68 @@ if ($loadError === null && $errors === []) {
     <div class="footnote">
         Источник данных: ISS Московской биржи. Метрики рассчитываются по историческим дневным значениям индексов за выбранный период. IMOEX, RGBITR, RUGOLD, RUCBTRNS — официальные индексы МосБиржи. MREFTR — индекс МосБиржи фондов недвижимости полной доходности. Безрисковая ставка для коэффициентов Шарпа и Сортино принята равной 16% (ключевая ставка ЦБ РФ). Расчеты носят аналитический характер и не являются инвестиционной рекомендацией.
     </div>
+</form>
 </div>
 <script>
-    document.querySelectorAll('input[type="range"][data-output]').forEach(function (slider) {
-        var output = document.getElementById(slider.dataset.output);
-        var update = function () {
-            if (output) output.textContent = slider.value;
-        };
-        slider.addEventListener('input', update);
-        update();
-    });
-
     var form = document.getElementById('portfolio-form');
     var toggle = document.getElementById('re_on');
     var dateFrom = document.getElementById('date_from');
     var dateTo = document.getElementById('date_to');
+    var sumWarning = document.getElementById('sum-warning');
+    var sumWarningTotal = document.getElementById('sum-warning-total');
+
+    function getSliderSum() {
+        var sum = 0;
+        document.querySelectorAll('input[type="range"][data-output]').forEach(function (slider) {
+            sum += parseInt(slider.value, 10) || 0;
+        });
+        return sum;
+    }
+
+    function updateSumWarning() {
+        if (!sumWarning) return;
+
+        var sum = getSliderSum();
+
+        if (Math.abs(sum - 100) > 1) {
+            sumWarning.style.display = '';
+            if (sumWarningTotal) {
+                sumWarningTotal.textContent = sum;
+            }
+        } else {
+            sumWarning.style.display = 'none';
+        }
+    }
+
+    document.querySelectorAll('input[type="range"][data-output]').forEach(function (slider) {
+        var output = document.getElementById(slider.dataset.output);
+
+        function updateSliderUI() {
+            if (output) {
+                output.textContent = slider.value;
+            }
+            updateSumWarning();
+        }
+
+        slider.addEventListener('input', updateSliderUI);
+
+        slider.addEventListener('change', function () {
+            updateSliderUI();
+            form.submit();
+        });
+
+        updateSliderUI();
+    });
 
     [toggle, dateFrom, dateTo].forEach(function (el) {
         if (!el) return;
         el.addEventListener('change', function () {
+            updateSumWarning();
             form.submit();
         });
     });
+
+    updateSumWarning();
 </script>
 </body>
 </html>
