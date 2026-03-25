@@ -234,16 +234,6 @@ def _to_api_dt(d: date, end_of_day: bool = False) -> str:
 def _to_date(d: str) -> date:
     return pd.to_datetime(d, utc=True).date()
 
-def save_snapshot_csv(df: pd.DataFrame) -> None:
-    try:
-        out_dir = Path("snapshots")
-        out_dir.mkdir(parents=True, exist_ok=True)
-        snap_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        out_path = out_dir / f"zpif_history_{snap_date}.csv"
-        df.to_csv(out_path, index=False, encoding="utf-8")
-    except Exception:
-        pass
-
 def df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str) -> bytes:
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
@@ -637,6 +627,7 @@ def shift_date_by_period(cur: date, period_kind: str, forward: bool) -> date:
         return cur + relativedelta(years=sign)
     return cur
 
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
 def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
@@ -696,6 +687,7 @@ def build_accent_daily_table(df_raw: pd.DataFrame) -> pd.DataFrame:
 
     return out
 
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
 def build_range_summary(df_raw: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFrame:
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
@@ -723,6 +715,7 @@ def build_range_summary(df_raw: pd.DataFrame, start_d: date, end_d: date) -> pd.
     grp.insert(1, "Конец периода", end_d)
     return grp
 
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
 def pivot_period_summary(period_df: pd.DataFrame) -> pd.DataFrame:
     if period_df is None or period_df.empty:
         return pd.DataFrame()
@@ -968,6 +961,42 @@ def render_fund_selector(df: pd.DataFrame) -> pd.DataFrame:
     df_sel["label"] = df_sel["fund"].astype(str) + " (" + df_sel["isin"].astype(str) + ")"
     return df_sel
 
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def prep_returns_price_base(df_sel: pd.DataFrame, end_date_ret: date) -> pd.DataFrame:
+    price_base = (
+        df_sel.dropna(subset=["close"])
+             .sort_values(["label", "tradedate"])
+             .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+             .agg(close=("close", "last"))
+    )
+    price_base = price_base[price_base["tradedate"] <= end_date_ret].copy()
+    return price_base
+
+
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def filter_full_horizon_cached(prices: pd.DataFrame, start_date: date) -> pd.DataFrame:
+    first_dates = prices.groupby("label")["tradedate"].min()
+    ok_labels = first_dates[first_dates <= start_date].index
+    return prices[prices["label"].isin(ok_labels)].copy()
+
+
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def build_cum_return_cached(prices: pd.DataFrame, start_date: Optional[date], end_date_: date) -> pd.DataFrame:
+    d = prices.copy()
+    d = d[d["tradedate"] <= end_date_]
+    if start_date is not None:
+        d = d[d["tradedate"] >= start_date]
+
+    if d.empty:
+        return d
+
+    d = d.sort_values(["label", "tradedate"]).copy()
+    d["base_close"] = d.groupby("label")["close"].transform("first")
+    d["base_date"] = d.groupby("label")["tradedate"].transform("first")
+    d["base_date_str"] = d["base_date"].astype(str)
+    d["ret_pct"] = (d["close"] / d["base_close"] - 1.0) * 100.0
+    return d
+
 # -----------------------
 # Рендер вкладки "Доходность"
 # -----------------------
@@ -992,37 +1021,11 @@ def render_returns(df_sel: pd.DataFrame, date_to: str) -> None:
         key="ret_strict",
     )
 
-    price_base = (
-        df_sel.dropna(subset=["close"])
-             .sort_values(["label", "tradedate"])
-             .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
-             .agg(close=("close", "last"))
-    )
-    price_base = price_base[price_base["tradedate"] <= end_date_ret].copy()
+    price_base = prep_returns_price_base(df_sel, end_date_ret)
 
     if price_base.empty:
         st.info("Недостаточно данных close для расчета доходности.")
         return
-
-    def filter_full_horizon(prices: pd.DataFrame, start_date: date) -> pd.DataFrame:
-        first_dates = prices.groupby("label")["tradedate"].min()
-        ok_labels = first_dates[first_dates <= start_date].index
-        return prices[prices["label"].isin(ok_labels)].copy()
-
-    def build_cum_return(prices: pd.DataFrame, start_date: Optional[date], end_date_: date) -> pd.DataFrame:
-        d = prices.copy()
-        d = d[d["tradedate"] <= end_date_]
-        if start_date is not None:
-            d = d[d["tradedate"] >= start_date]
-        if d.empty:
-            return d
-
-        d = d.sort_values(["label", "tradedate"]).copy()
-        d["base_close"] = d.groupby("label")["close"].transform("first")
-        d["base_date"] = d.groupby("label")["tradedate"].transform("first")
-        d["base_date_str"] = d["base_date"].astype(str)
-        d["ret_pct"] = (d["close"] / d["base_close"] - 1.0) * 100.0
-        return d
 
     def plot_return_tab(ret_df: pd.DataFrame, title_suffix: str) -> None:
         if ret_df.empty:
@@ -1088,17 +1091,17 @@ def render_returns(df_sel: pd.DataFrame, date_to: str) -> None:
     tab_all, tab_1y, tab_3y = st.tabs(["За все время", "За 1 год", "За 3 года"])
 
     with tab_all:
-        ret_all = build_cum_return(price_base, start_date=None, end_date_=end_date_ret)
+        ret_all = build_cum_return_cached(price_base, start_date=None, end_date_=end_date_ret)
         plot_return_tab(ret_all, "Горизонт: все время")
 
     with tab_1y:
-        pb = filter_full_horizon(price_base, start_1y) if strict_horizon else price_base
-        ret_1y = build_cum_return(pb, start_date=start_1y, end_date_=end_date_ret)
+        pb = filter_full_horizon_cached(price_base, start_1y) if strict_horizon else price_base
+        ret_1y = build_cum_return_cached(pb, start_date=start_1y, end_date_=end_date_ret)
         plot_return_tab(ret_1y, "Горизонт: 1 год")
 
     with tab_3y:
-        pb = filter_full_horizon(price_base, start_3y) if strict_horizon else price_base
-        ret_3y = build_cum_return(pb, start_date=start_3y, end_date_=end_date_ret)
+        pb = filter_full_horizon_cached(price_base, start_3y) if strict_horizon else price_base
+        ret_3y = build_cum_return_cached(pb, start_date=start_3y, end_date_=end_date_ret)
         plot_return_tab(ret_3y, "Горизонт: 3 года")
 
     st.caption(f"История для доходности: 2020-01-01T00:00:00Z — {date_to} (UTC). Кеш 24 часа.")
@@ -1106,6 +1109,94 @@ def render_returns(df_sel: pd.DataFrame, date_to: str) -> None:
 # -----------------------
 # Рендер вкладки "Основные графики"
 # -----------------------
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def prep_period_df(df_sel: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
+    period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+    period_df = period_df.dropna(subset=["close"]).copy()
+
+    if period_df.empty:
+        return period_df
+
+    period_df = (
+        period_df.sort_values(["label", "tradedate"])
+                 .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+                 .agg(close=("close", "last"), volume=("volume", "sum"), value=("value", "sum"))
+    )
+
+    if period_df.empty:
+        return period_df
+
+    base_close = period_df.groupby("label")["close"].transform("first")
+    period_df["close_change_pct"] = (period_df["close"] / base_close - 1.0) * 100.0
+    return period_df
+
+
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def prep_price_base(df_sel: pd.DataFrame, end_date: date) -> pd.DataFrame:
+    price_base = df_sel[df_sel["tradedate"] <= end_date].copy()
+    price_base = (
+        price_base.dropna(subset=["close"])
+                  .sort_values(["label", "tradedate"])
+                  .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+                  .agg(open=("open", "last"), close=("close", "last"))
+    )
+    return price_base
+
+
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def prep_vol_df(df_sel: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
+    vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+    vol_df = vol_df.dropna(subset=["value"]).copy()
+
+    if vol_df.empty:
+        return vol_df
+
+    vol_df = (
+        vol_df.sort_values(["label", "tradedate"])
+              .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+              .agg(
+                  value=("value", "sum"),
+                  volume=("volume", "sum"),
+                  numtrades=("numtrades", "sum"),
+                  close=("close", "last"),
+              )
+    )
+    return vol_df
+
+
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def prep_avg_df(df_sel: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
+    avg_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+    avg_df = avg_df.dropna(subset=["value", "numtrades"]).copy()
+
+    if avg_df.empty:
+        return avg_df
+
+    avg_df = (
+        avg_df.sort_values(["label", "tradedate"])
+              .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+              .agg(value=("value", "sum"), numtrades=("numtrades", "sum"))
+    )
+
+    avg_df = avg_df[avg_df["numtrades"] > 0].copy()
+    avg_df["avg_trade_rub"] = avg_df["value"] / avg_df["numtrades"]
+    return avg_df
+
+
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def prep_cmp_df(df_sel: pd.DataFrame) -> pd.DataFrame:
+    cmp_df = df_sel.dropna(subset=["close"]).copy()
+
+    if cmp_df.empty:
+        return cmp_df
+
+    cmp_df = (
+        cmp_df.sort_values(["label", "tradedate"])
+              .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
+              .agg(close=("close", "last"), waprice=("waprice", "last"))
+    )
+    return cmp_df
+
 def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> None:
     mode = st.radio(
         "Режим просмотра",
@@ -1142,7 +1233,8 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
         start_idx = max(0, end_idx - window + 1)
         start_date = available_dates[start_idx]
 
-        period_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
+        
+        period_df = prep_period_df(df_sel, start_date, end_date)
 
         st.subheader("Изменение цены закрытия (%)")
         st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
@@ -1150,53 +1242,34 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
         if period_df.empty:
             st.info("За выбранный период нет данных.")
         else:
-            period_df = period_df.dropna(subset=["close"]).copy()
-            period_df = (
-                period_df.sort_values(["label", "tradedate"])
-                         .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
-                         .agg(close=("close", "last"), volume=("volume", "sum"), value=("value", "sum"))
+            fig_close_pct = px.line(
+                period_df,
+                x="tradedate",
+                y="close_change_pct",
+                color="label",
+                hover_data=["fund", "isin", "close", "volume", "value"],
+                markers=True,
+                labels={"close_change_pct": "Изменение цены закрытия, %", "tradedate": "Дата"},
             )
-
-            if period_df.empty:
-                st.info("Нет данных close для построения графика.")
-            else:
-                base_close = period_df.groupby("label")["close"].transform("first")
-                period_df["close_change_pct"] = (period_df["close"] / base_close - 1.0) * 100.0
-
-                fig_close_pct = px.line(
-                    period_df,
-                    x="tradedate",
-                    y="close_change_pct",
-                    color="label",
-                    hover_data=["fund", "isin", "close", "volume", "value"],
-                    markers=True,
-                    labels={"close_change_pct": "Изменение цены закрытия, %", "tradedate": "Дата"},
+            fig_close_pct.update_yaxes(hoverformat=".2f")
+            fig_close_pct.update_layout(separators=". ")
+            fig_close_pct.update_traces(
+                hovertemplate=(
+                    "Дата: %{x|%Y-%m-%d}<br>"
+                    "Фонд: %{customdata[0]}<br>"
+                    "Цена закрытия: %{customdata[2]:,.2f}<br>"
+                    "Изменение цены закрытия: %{y:.2f}%<br>"
+                    "Объем бумаг: %{customdata[3]:,.0f}<br>"
+                    "Оборот (руб): %{customdata[4]:,.0f}<br>"
+                    "<extra>%{fullData.name}</extra>"
                 )
-                fig_close_pct.update_yaxes(hoverformat=".2f")
-                fig_close_pct.update_layout(separators=". ")
-                fig_close_pct.update_traces(
-                    hovertemplate=(
-                        "Дата: %{x|%Y-%m-%d}<br>"
-                        "Фонд: %{customdata[0]}<br>"
-                        "Цена закрытия: %{customdata[2]:,.2f}<br>"
-                        "Изменение цены закрытия: %{y:.2f}%<br>"
-                        "Объем бумаг: %{customdata[3]:,.0f}<br>"
-                        "Оборот (руб): %{customdata[4]:,.0f}<br>"
-                        "<extra>%{fullData.name}</extra>"
-                    )
-                )
-                st.plotly_chart(fig_close_pct, width="stretch")
+            )
+            st.plotly_chart(fig_close_pct, width="stretch")
 
         st.subheader("Волатильность цены")
 
         vol_roll_n = 21
-        price_base = df_sel[df_sel["tradedate"] <= end_date].copy()
-        price_base = (
-            price_base.dropna(subset=["close"])
-                      .sort_values(["label", "tradedate"])
-                      .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
-                      .agg(open=("open", "last"), close=("close", "last"))
-        )
+        price_base = prep_price_base(df_sel, end_date)
 
         all_dates = sorted(price_base["tradedate"].dropna().unique().tolist())
         if len(all_dates) < 2:
@@ -1329,18 +1402,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
         st.subheader("Оборот торгов")
         st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
-        vol_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
-        vol_df = vol_df.dropna(subset=["value"]).copy()
-        vol_df = (
-            vol_df.sort_values(["label", "tradedate"])
-                  .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
-                  .agg(
-                      value=("value", "sum"),
-                      volume=("volume", "sum"),
-                      numtrades=("numtrades", "sum"),
-                      close=("close", "last"),
-                  )
-        )
+        vol_df = prep_vol_df(df_sel, start_date, end_date)
 
         if vol_df.empty:
             st.info("За выбранный период нет данных по обороту.")
@@ -1522,15 +1584,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
         st.subheader("Изменение среднего размера сделки (руб/сделку) за выбранный период")
         st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
 
-        avg_df = df_sel[(df_sel["tradedate"] >= start_date) & (df_sel["tradedate"] <= end_date)].copy()
-        avg_df = avg_df.dropna(subset=["value", "numtrades"]).copy()
-        avg_df = (
-            avg_df.sort_values(["label", "tradedate"])
-                  .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
-                  .agg(value=("value", "sum"), numtrades=("numtrades", "sum"))
-        )
-        avg_df = avg_df[avg_df["numtrades"] > 0].copy()
-        avg_df["avg_trade_rub"] = avg_df["value"] / avg_df["numtrades"]
+        avg_df = prep_avg_df(df_sel, start_date, end_date)
 
         if avg_df.empty:
             st.info("Нет данных для расчета среднего размера сделки.")
@@ -1586,12 +1640,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
     else:
         st.subheader("Изменение цены закрытия, средневзвешенная цена")
 
-        cmp_df = df_sel.dropna(subset=["close"]).copy()
-        cmp_df = (
-            cmp_df.sort_values(["label", "tradedate"])
-                  .groupby(["label", "fund", "isin", "tradedate"], as_index=False)
-                  .agg(close=("close", "last"), waprice=("waprice", "last"))
-        )
+        cmp_df = prep_cmp_df(df_sel)
 
         all_dates = sorted(cmp_df["tradedate"].dropna().unique().tolist())
         if len(all_dates) < 2:
@@ -1878,7 +1927,6 @@ elif section == "Основные графики":
     if df.empty:
         st.warning("Данных не найдено за выбранный период.")
     else:
-        save_snapshot_csv(df)
         df_sel = render_fund_selector(df)
         if df_sel.empty:
             st.warning("По выбранным фондам нет данных.")
@@ -1901,7 +1949,6 @@ else:
     if df.empty:
         st.warning("Данных не найдено за выбранный период.")
     else:
-        save_snapshot_csv(df)
         df_sel = render_fund_selector(df)
         if df_sel.empty:
             st.warning("По выбранным фондам нет данных.")
