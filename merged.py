@@ -1739,7 +1739,7 @@ def render_accent_tab() -> None:
         st.error("Некорректный период: начало позже конца.")
         return
 
-    st.subheader("Таблица торгов по дням: Акцент IV и Акцент 5")
+   st.title("Таблица торгов по дням: Акцент IV и Акцент 5")
 
     with st.spinner("Загружаю данные из API..."):
         df_raw_period = load_accent_raw(period_start, period_end)
