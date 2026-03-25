@@ -906,15 +906,10 @@ def render_fund_selector(df: pd.DataFrame) -> pd.DataFrame:
     if SELECT_KEY not in st.session_state:
         st.session_state[SELECT_KEY] = available_funds[:]
     else:
-        st.session_state[SELECT_KEY] = [f for f in st.session_state[SELECT_KEY] if f in available_funds]
-        if not st.session_state[SELECT_KEY] and available_funds:
-            st.session_state[SELECT_KEY] = available_funds[:]
-
-    st.multiselect(
-        "Выберите фонды",
-        options=available_funds,
-        key=SELECT_KEY,
-    )
+        st.session_state[SELECT_KEY] = [
+            f for f in st.session_state[SELECT_KEY]
+            if f in available_funds
+        ]
 
     with st.expander("Быстрый выбор: УК и квал/неквал", expanded=False):
         st.markdown("#### По УК")
@@ -925,14 +920,14 @@ def render_fund_selector(df: pd.DataFrame) -> pd.DataFrame:
                 st.button(
                     f"+ {gname}",
                     key=f"btn_add_{gname}",
-                    use_container_width=True,
+                    width="stretch",
                     on_click=_add_group,
                     args=(gname,),
                 )
                 st.button(
                     f"− {gname}",
                     key=f"btn_rm_{gname}",
-                    use_container_width=True,
+                    width="stretch",
                     on_click=_remove_group,
                     args=(gname,),
                 )
@@ -940,27 +935,33 @@ def render_fund_selector(df: pd.DataFrame) -> pd.DataFrame:
         st.markdown("#### По квалификации")
         q1, q2 = st.columns(2)
         with q1:
-            st.button("+ Квал", key="btn_add_qual", use_container_width=True, on_click=_add_qual, args=("Квал",))
-            st.button("− Квал", key="btn_rm_qual", use_container_width=True, on_click=_remove_qual, args=("Квал",))
+            st.button("+ Квал", key="btn_add_qual", width="stretch", on_click=_add_qual, args=("Квал",))
+            st.button("− Квал", key="btn_rm_qual", width="stretch", on_click=_remove_qual, args=("Квал",))
         with q2:
-            st.button("+ Неквал", key="btn_add_nonqual", use_container_width=True, on_click=_add_qual, args=("Неквал",))
-            st.button("− Неквал", key="btn_rm_nonqual", use_container_width=True, on_click=_remove_qual, args=("Неквал",))
+            st.button("+ Неквал", key="btn_add_nonqual", width="stretch", on_click=_add_qual, args=("Неквал",))
+            st.button("− Неквал", key="btn_rm_nonqual", width="stretch", on_click=_remove_qual, args=("Неквал",))
 
         a, b = st.columns(2)
         with a:
             st.button(
                 "Выбрать все",
                 key="btn_all",
-                use_container_width=True,
+                width="stretch",
                 on_click=lambda: st.session_state.__setitem__(SELECT_KEY, st.session_state.get(AVAILABLE_FUNDS_KEY, [])[:]),
             )
         with b:
             st.button(
                 "Снять все",
                 key="btn_none",
-                use_container_width=True,
+                width="stretch",
                 on_click=lambda: st.session_state.__setitem__(SELECT_KEY, []),
             )
+
+     st.multiselect(
+        "Выберите фонды",
+        options=available_funds,
+        key=SELECT_KEY,
+    )
 
     selected_funds = st.session_state.get(SELECT_KEY, [])
     df_sel = df[df["fund"].isin(selected_funds)].copy().sort_values(["tradedate", "fund"])
@@ -1052,7 +1053,7 @@ def render_returns(df_sel: pd.DataFrame, date_to: str) -> None:
                 f"<extra>{title_suffix}</extra>"
             )
         )
-        st.plotly_chart(fig_ret, use_container_width=True)
+        st.plotly_chart(fig_ret, width="stretch")
 
         last_points = (
             ret_df.sort_values(["label", "tradedate"])
@@ -1078,7 +1079,7 @@ def render_returns(df_sel: pd.DataFrame, date_to: str) -> None:
         disp["Доходность, %"] = disp["Доходность, %"].map(
             lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
         )
-        st.dataframe(disp, use_container_width=True, hide_index=True)
+        st.dataframe(disp, width="stretch", hide_index=True)
 
     end_ts = pd.to_datetime(end_date_ret)
     start_1y = (end_ts - pd.DateOffset(years=1)).date()
@@ -1184,7 +1185,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
                         "<extra>%{fullData.name}</extra>"
                     )
                 )
-                st.plotly_chart(fig_close_pct, use_container_width=True)
+                st.plotly_chart(fig_close_pct, width="stretch")
 
         st.subheader("Волатильность цены")
 
@@ -1255,7 +1256,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
                     display["Дневная волатильность, %"] = display["Дневная волатильность, %"].map(
                         lambda x: "—" if pd.isna(x) else f"{x:.2f}%"
                     )
-                    st.dataframe(display, use_container_width=True, hide_index=True)
+                    st.dataframe(display, width="stretch", hide_index=True)
 
             with tab_month:
                 st.markdown("""
@@ -1323,7 +1324,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
                         display2[col_name] = display2[col_name].map(
                             lambda x: "—" if pd.isna(x) else f"{x:.2f}%"
                         )
-                        st.dataframe(display2, use_container_width=True, hide_index=True)
+                        st.dataframe(display2, width="stretch", hide_index=True)
 
         st.subheader("Оборот торгов")
         st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
@@ -1439,7 +1440,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
                     display_table["Изменение оборота, %"] = display_table["Изменение оборота, %"].map(
                         lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
                     )
-                    st.dataframe(display_table, use_container_width=True, hide_index=True)
+                    st.dataframe(display_table, width="stretch", hide_index=True)
 
             with tab_log:
                 val_pos = vol_df[vol_df["value"] > 0].copy()
@@ -1470,7 +1471,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
                             "<extra>%{fullData.name}</extra>"
                         )
                     )
-                    st.plotly_chart(fig_val, use_container_width=True)
+                    st.plotly_chart(fig_val, width="stretch")
 
             with tab_hist:
                 sum_df = (
@@ -1516,7 +1517,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
                             "<extra></extra>"
                         ),
                     )
-                    st.plotly_chart(fig_hist, use_container_width=True)
+                    st.plotly_chart(fig_hist, width="stretch")
 
         st.subheader("Изменение среднего размера сделки (руб/сделку) за выбранный период")
         st.caption(f"Период: {start_date} — {end_date} (торговых дней в окне: {window})")
@@ -1580,7 +1581,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
             display["Изменение, %"] = display["Изменение, %"].map(
                 lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
             )
-            st.dataframe(display, use_container_width=True, hide_index=True)
+            st.dataframe(display, width="stretch", hide_index=True)
 
     else:
         st.subheader("Изменение цены закрытия, средневзвешенная цена")
@@ -1660,7 +1661,7 @@ def render_main_graphs(df_sel: pd.DataFrame, date_from: str, date_to: str) -> No
                 lambda x: "—" if pd.isna(x) else f"{x:+.2f}%"
             )
 
-            st.dataframe(display, use_container_width=True, hide_index=True)
+            st.dataframe(display, width="stretch", hide_index=True)
 
     st.caption(f"Период загрузки: {date_from} — {date_to} (UTC). Кеш обновляется раз в сутки.")
 
@@ -1713,7 +1714,7 @@ def render_accent_tab() -> None:
         with c_prev:
             st.button(
                 "← Предыдущий период",
-                use_container_width=True,
+                width="stretch",
                 key="accent_prev_period",
                 on_click=_shift_summary_end,
                 args=(False,),
@@ -1721,7 +1722,7 @@ def render_accent_tab() -> None:
         with c_next:
             st.button(
                 "Следующий период →",
-                use_container_width=True,
+                width="stretch",
                 key="accent_next_period",
                 on_click=_shift_summary_end,
                 args=(True,),
@@ -1730,7 +1731,7 @@ def render_accent_tab() -> None:
         period_start, period_end = calc_period_window(st.session_state[state_key], period_kind)
         st.caption(f"Окно итогов: {period_start} — {period_end}")
 
-        if st.button("Очистить кеш", use_container_width=True, key="accent_clear_cache"):
+        if st.button("Очистить кеш", width="stretch", key="accent_clear_cache"):
             st.cache_data.clear()
             st.rerun()
 
@@ -1738,7 +1739,7 @@ def render_accent_tab() -> None:
         st.error("Некорректный период: начало позже конца.")
         return
 
-    st.subheader("Торги Ф4 и Ф5")
+    st.subheader("Таблица торгов по дням: Акцент IV и Акцент 5")
 
     with st.spinner("Загружаю данные из API..."):
         df_raw_period = load_accent_raw(period_start, period_end)
@@ -1759,7 +1760,7 @@ def render_accent_tab() -> None:
 
     fig_turnover = build_turnover_stacked_chart(df_raw=df_raw_day, value_mode=value_mode)
     if fig_turnover.data:
-        st.plotly_chart(fig_turnover, use_container_width=True)
+        st.plotly_chart(fig_turnover, width="stretch")
     else:
         st.info("Нет данных для построения графика.")
 
@@ -1795,7 +1796,7 @@ def render_accent_tab() -> None:
 
         st.dataframe(
             period_show.style.format(fmt),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -1805,7 +1806,7 @@ def render_accent_tab() -> None:
             data=xlsx_period,
             file_name=f"accent_summary_{period_kind.lower()}_{d_from}_{d_to}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
+            width="stretch",
             key="accent_download_summary",
         )
 
@@ -1832,7 +1833,7 @@ def render_accent_tab() -> None:
 
         st.dataframe(
             accent_daily_show,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={"_index": None},
         )
@@ -1843,7 +1844,7 @@ def render_accent_tab() -> None:
             data=xlsx_daily,
             file_name=f"accent_daily_{d_from}_{d_to}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
+            width="stretch",
             key="accent_download_daily",
         )
 
