@@ -957,7 +957,7 @@ def render_fund_selector(df: pd.DataFrame) -> pd.DataFrame:
                 on_click=lambda: st.session_state.__setitem__(SELECT_KEY, []),
             )
 
-     st.multiselect(
+    st.multiselect(
         "Выберите фонды",
         options=available_funds,
         key=SELECT_KEY,
