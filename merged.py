@@ -273,6 +273,26 @@ def df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str) -> bytes:
     buf.seek(0)
     return buf.read()
 
+def dfs_to_xlsx_bytes(dfs: Dict[str, pd.DataFrame]) -> bytes:
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for sheet_name, df in dfs.items():
+            safe_sheet_name = sheet_name[:31]
+            df.to_excel(writer, index=False, sheet_name=safe_sheet_name)
+            ws = writer.sheets[safe_sheet_name]
+            ws.freeze_panes = "A2"
+
+            for col_cells in ws.columns:
+                max_len = 0
+                col_letter = col_cells[0].column_letter
+                for cell in col_cells:
+                    v = "" if cell.value is None else str(cell.value)
+                    max_len = max(max_len, len(v))
+                ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
+
+    buf.seek(0)
+    return buf.read()
+
 # -----------------------
 # API helpers
 # -----------------------
@@ -2256,26 +2276,52 @@ def render_moex_tab() -> None:
     )
 
     st.plotly_chart(fig, width="stretch")
+ # -------------------------
+    # Excel-выгрузка графика: широкий формат
+    # -------------------------
+    levels_wide = (
+        series_df_raw[["tradedate", "label", "close"]]
+        .dropna(subset=["tradedate", "label", "close"])
+        .pivot_table(
+            index="tradedate",
+            columns="label",
+            values="close",
+            aggfunc="last",
+        )
+        .reset_index()
+        .rename(columns={"tradedate": "Дата"})
+    )
 
-    graph_export = series_df[["label", "tradedate", "close", "pct"]].copy()
-    graph_export = graph_export.rename(columns={
-        "label": "Серия",
-        "tradedate": "Дата",
-        "close": "Значение",
-        "pct": "Изменение, %",
+    pct_wide = (
+        series_df[["tradedate", "label", "pct"]]
+        .dropna(subset=["tradedate", "label", "pct"])
+        .pivot_table(
+            index="tradedate",
+            columns="label",
+            values="pct",
+            aggfunc="last",
+        )
+        .reset_index()
+        .rename(columns={"tradedate": "Дата"})
+    )
+
+    levels_wide.columns.name = None
+    pct_wide.columns.name = None
+
+    xlsx_graph = dfs_to_xlsx_bytes({
+        "Уровни индексов": levels_wide,
+        "Изменение_%": pct_wide,
     })
 
-    xlsx_graph = df_to_xlsx_bytes(graph_export, sheet_name="График_MOEX")
-
     st.download_button(
-        "Скачать Excel: индексы Мосбиржи",
+        "Скачать Excel: график Мосбиржи",
         data=xlsx_graph,
-        file_name=f"moex_graph_{d_from}_{d_to}.xlsx",
+        file_name=f"moex_graph_wide_{d_from}_{d_to}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         width="stretch",
         key="moex_download_graph",
     )
-
+     
     st.subheader("Итог по выбранному периоду")
 
     tmp = series_df.sort_values(["secid", "tradedate"]).copy()
