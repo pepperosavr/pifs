@@ -279,9 +279,27 @@ def dfs_to_xlsx_bytes(dfs: Dict[str, pd.DataFrame]) -> bytes:
         for sheet_name, df in dfs.items():
             safe_sheet_name = sheet_name[:31]
             df.to_excel(writer, index=False, sheet_name=safe_sheet_name)
+
             ws = writer.sheets[safe_sheet_name]
             ws.freeze_panes = "A2"
 
+            # Форматы по листам
+            is_pct_sheet = safe_sheet_name == "Изменение_%"
+            is_level_sheet = safe_sheet_name == "Уровни индексов"
+
+            for row in ws.iter_rows(min_row=2):
+                for i, cell in enumerate(row, start=1):
+                    # 1-я колонка = дата
+                    if i == 1:
+                        cell.number_format = "yyyy-mm-dd"
+                    else:
+                        if is_pct_sheet:
+                            # Число 2.35 показываем как 2.35%, но не как 235%
+                            cell.number_format = "+0.00\\%;-0.00\\%;0.00\\%"
+                        elif is_level_sheet:
+                            cell.number_format = '#,##0.00'
+
+            # автоширина колонок
             for col_cells in ws.columns:
                 max_len = 0
                 col_letter = col_cells[0].column_letter
