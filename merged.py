@@ -2080,7 +2080,7 @@ def moex_resample_close(df_one: pd.DataFrame, freq: str) -> pd.DataFrame:
     out["secid"] = df_one["secid"].iloc[0]
     return out
 
-
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
 def moex_calc_metric(df_all: pd.DataFrame, mode: str) -> pd.DataFrame:
     d = df_all.sort_values(["secid", "tradedate"]).copy()
 
@@ -2093,7 +2093,7 @@ def moex_calc_metric(df_all: pd.DataFrame, mode: str) -> pd.DataFrame:
     return d
 
 def render_moex_tab() -> None:
-    st.subheader("Мосбиржа")
+    st.subheader("Индексы Московской биржи: процентное изменение (с 2010 года)")
 
     with st.sidebar:
         st.header("Параметры Мосбиржи")
@@ -2119,8 +2119,9 @@ def render_moex_tab() -> None:
         with c1:
             d_from = st.date_input(
                 "Начало периода",
-                value=MOEX_DEFAULT_FROM,
+                value=date(2025, 1, 1),
                 min_value=MOEX_DEFAULT_FROM,
+                max_value=date.today(),
                 key="moex_d_from",
             )
         with c2:
@@ -2254,6 +2255,25 @@ def render_moex_tab() -> None:
     )
 
     st.plotly_chart(fig, width="stretch")
+
+    graph_export = series_df[["label", "tradedate", "close", "pct"]].copy()
+    graph_export = graph_export.rename(columns={
+        "label": "Серия",
+        "tradedate": "Дата",
+        "close": "Значение",
+        "pct": "Изменение, %",
+    })
+
+    xlsx_graph = df_to_xlsx_bytes(graph_export, sheet_name="График_MOEX")
+
+    st.download_button(
+        "Скачать Excel: индексы Мосбиржи",
+        data=xlsx_graph,
+        file_name=f"moex_graph_{d_from}_{d_to}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        width="stretch",
+        key="moex_download_graph",
+    )
 
     st.subheader("Итог по выбранному периоду")
 
