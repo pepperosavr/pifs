@@ -2,7 +2,7 @@
 # coding: utf-8
 
 import os
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -405,6 +405,7 @@ def _normalize_header_name(x: Any) -> str:
     s = _clean_text(x).lower()
     s = s.replace("ё", "е")
     s = s.replace(":", "")
+    s = s.replace("№", "")
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
@@ -466,6 +467,82 @@ def _flatten_column_name(col: Any) -> str:
         return " | ".join(parts)
     return str(col)
 
+def _decode_html_bytes(file_bytes: bytes) -> str:
+    last_error = None
+    for enc in ["utf-8", "utf-8-sig", "cp1251", "windows-1251"]:
+        try:
+            return file_bytes.decode(enc)
+        except Exception as e:
+            last_error = e
+    raise RuntimeError(f"Не удалось декодировать HTML-файл: {last_error}")
+
+
+def _flatten_html_columns(columns) -> List[str]:
+    out = []
+    for col in columns:
+        if isinstance(col, tuple):
+            parts = [_clean_text(x) for x in col if _clean_text(x)]
+            out.append(" ".join(parts))
+        else:
+            out.append(_clean_text(col))
+    return out
+
+
+def _score_broker_table(df: pd.DataFrame) -> int:
+    score = 0
+
+    col_names = [_normalize_header_name(c) for c in df.columns.tolist()]
+    alias_keys = set(BROKER_REPORT_ALIASES.keys())
+
+    score += sum(1 for c in col_names if c in alias_keys)
+
+    sample_rows = df.head(5).fillna("").astype(str)
+    for _, row in sample_rows.iterrows():
+        vals = [_normalize_header_name(v) for v in row.tolist()]
+        score += sum(1 for v in vals if v in alias_keys)
+
+    return score
+
+
+def _read_html_broker_file_raw(uploaded_file) -> pd.DataFrame:
+    file_bytes = uploaded_file.getvalue()
+    html_text = _decode_html_bytes(file_bytes)
+
+    try:
+        tables = pd.read_html(StringIO(html_text))
+    except Exception as e:
+        raise RuntimeError(f"Не удалось прочитать HTML-таблицы из файла {uploaded_file.name}: {e}")
+
+    if not tables:
+        raise RuntimeError(f"В HTML-файле {uploaded_file.name} не найдено таблиц.")
+
+    best_df = None
+    best_score = -1
+
+    for tbl in tables:
+        df = tbl.copy()
+        df.columns = _flatten_html_columns(df.columns)
+        sc = _score_broker_table(df)
+        if sc > best_score:
+            best_score = sc
+            best_df = df
+
+    if best_df is None or best_score < 3:
+        raise RuntimeError(
+            f"Не удалось определить таблицу сделок в HTML-файле {uploaded_file.name}."
+        )
+
+    best_df = best_df.copy()
+    best_df.columns = _flatten_html_columns(best_df.columns)
+
+    # Приводим HTML-таблицу к тому же виду, который ожидает parse_broker_report:
+    # первая строка внутри raw должна содержать заголовки
+    header_row = pd.DataFrame([best_df.columns.tolist()])
+    raw = pd.concat([header_row, best_df.reset_index(drop=True)], ignore_index=True)
+    raw.columns = list(range(raw.shape[1]))
+
+    return raw
+
 def _read_uploaded_broker_file_raw(uploaded_file) -> pd.DataFrame:
     file_name = str(uploaded_file.name).lower()
     file_bytes = uploaded_file.getvalue()
@@ -486,8 +563,13 @@ def _read_uploaded_broker_file_raw(uploaded_file) -> pd.DataFrame:
                 last_error = e
         raise RuntimeError(f"Не удалось прочитать CSV: {last_error}")
 
+    if file_name.endswith(".htm") or file_name.endswith(".html"):
+        return _read_html_broker_file_raw(uploaded_file)
+
     try:
-        return pd.read_excel(BytesIO(file_bytes), header=None, dtype=str)
+        if file_name.endswith(".xls"):
+            return pd.read_excel(BytesIO(file_bytes), header=None, dtype=str, engine="xlrd")
+        return pd.read_excel(BytesIO(file_bytes), header=None, dtype=str, engine="openpyxl")
     except Exception as e:
         raise RuntimeError(f"Не удалось прочитать Excel-файл {uploaded_file.name}: {e}")
 
@@ -2912,7 +2994,7 @@ def render_broker_reports_tab() -> None:
 
     uploaded_files = st.file_uploader(
         "Загрузите отчеты брокеров",
-        type=["xlsx", "xls", "csv"],
+        type=["xlsx", "csv", "htm"],
         accept_multiple_files=True,
         key="broker_reports_upload",
     )
