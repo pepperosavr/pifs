@@ -3237,7 +3237,7 @@ def render_broker_reports_tab() -> None:
         dimension_labels = list(BROKER_DIMENSION_LABELS.values())
         label_to_field = {v: k for k, v in BROKER_DIMENSION_LABELS.items()}
 
-        with st.expander("Настройка сводной", expanded=True):
+        with st.expander("Настройка сводной таблицы", expanded=True):
             selected_row_labels = st.multiselect(
                 "Строки",
                 options=dimension_labels,
