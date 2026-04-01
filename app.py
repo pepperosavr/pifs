@@ -3109,8 +3109,12 @@ def render_broker_reports_tab() -> None:
         st.warning("Часть файлов не удалось обработать:\n\n" + "\n".join(errors))
 
     if not parsed_parts:
-        st.error("Не удалось получить ни одной таблицы сделок из загруженных файлов.")
-        return
+    st.error("Не удалось получить ни одной таблицы сделок из загруженных файлов.")
+    if errors:
+        with st.expander("Подробности ошибок", expanded=True):
+            for err in errors:
+                st.write(err)
+    return
 
     deals_df = combine_broker_reports(parsed_parts)
 
