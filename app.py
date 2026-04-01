@@ -15,6 +15,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import openpyxl  # noqa: F401
 from dateutil.relativedelta import relativedelta
+import re
 
 st.set_page_config(page_title="Торги ЗПИФ", layout="wide")
 
@@ -191,6 +192,85 @@ MOEX_ACCENT_SERIES = {
 MOEX_ACCENT_INSTRUMENTS = ["RU000A100WZ5", "XACCSK"]
 
 # -----------------------
+# Константы для отчетов брокеров
+# -----------------------
+BROKER_REPORT_ALIASES = {
+    "дата и время заключения сделки": "trade_datetime",
+    "номер сделки": "deal_number",
+    "номер заявки": "order_number",
+    "код инструмента": "instrument_code",
+    "краткое наименование инструмента": "instrument_name",
+    "рынок": "market",
+    "направление": "direction",
+    "кол-во": "qty",
+    "колво": "qty",
+    "цена": "price",
+    "объем": "amount",
+    "объём": "amount",
+    "ндк": "nkd",
+    "нкд": "nkd",
+    "доходность": "yield_value",
+    "комиссия брокера": "broker_fee",
+    "комиссия за итс": "its_fee",
+    "комиссия за организацию торговли": "exchange_fee",
+    "клиринговая комиссия": "clearing_fee",
+    "дата расчетов": "settlement_date",
+    "дата расчётов": "settlement_date",
+    "уровень маржи": "margin_level",
+    "id пользователя": "user_id",
+}
+
+BROKER_DIMENSION_LABELS = {
+    "fund": "Фонд",
+    "direction": "Направление",
+    "broker": "Брокер",
+    "trade_date": "Дата сделки",
+    "settlement_date": "Дата расчетов",
+    "instrument_code": "Код инструмента",
+    "instrument_name": "Инструмент",
+    "market": "Рынок",
+    "client_code": "Код клиента",
+    "source_file": "Файл",
+}
+
+BROKER_VALUE_SPECS = {
+    "Среднее по полю Цена": ("price", "mean"),
+    "Сумма по полю Кол-во": ("qty", "sum"),
+    "Сумма по полю Объем": ("amount", "sum"),
+    "Количество сделок": ("trade_count", "sum"),
+}
+
+BROKER_FUND_ALIASES = {
+    "RU000A100WZ5": "АКЦЕНТ IV",
+    "АКЦЕНТ 4": "АКЦЕНТ IV",
+    "АКЦЕНТ IV": "АКЦЕНТ IV",
+    "ACCENT 4": "АКЦЕНТ IV",
+    "RU000A10DQF7": "Акцент 5",
+    "АКЦЕНТ 5": "Акцент 5",
+    "ACCENT 5": "Акцент 5",
+}
+
+BROKER_NAME_GUESSES = {
+    "бкс": "БКС",
+    "bcs": "БКС",
+    "риком": "Риком-Траст",
+    "rikom": "Риком-Траст",
+    "цифра": "ЦИФРАБрокер",
+    "cifra": "ЦИФРАБрокер",
+    "finam": "Финам",
+    "финам": "Финам",
+}
+
+BROKER_REQUIRED_COLUMNS = [
+    "trade_datetime",
+    "instrument_code",
+    "direction",
+    "qty",
+    "price",
+    "amount",
+]
+
+# -----------------------
 # Secrets / Env
 # -----------------------
 def get_secret(name: str, default: str = "") -> str:
@@ -310,6 +390,444 @@ def dfs_to_xlsx_bytes(dfs: Dict[str, pd.DataFrame]) -> bytes:
 
     buf.seek(0)
     return buf.read()
+
+# -----------------------
+# Утилиты для отчетов брокеров
+# -----------------------
+def _clean_text(x: Any) -> str:
+    if pd.isna(x):
+        return ""
+    s = str(x).replace("\xa0", " ").replace("\n", " ").replace("\r", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def _normalize_header_name(x: Any) -> str:
+    s = _clean_text(x).lower()
+    s = s.replace("ё", "е")
+    s = s.replace(":", "")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def _normalize_fund_key(x: Any) -> str:
+    return _clean_text(x).upper().replace("Ё", "Е")
+
+def _make_unique_columns(cols: List[str]) -> List[str]:
+    seen: Dict[str, int] = {}
+    out: List[str] = []
+
+    for c in cols:
+        base = c if c else "unnamed"
+        n = seen.get(base, 0)
+        if n == 0:
+            out.append(base)
+        else:
+            out.append(f"{base}_{n + 1}")
+        seen[base] = n + 1
+
+    return out
+
+def _parse_num_mixed(x: Any) -> float:
+    if pd.isna(x):
+        return np.nan
+
+    if isinstance(x, (int, float, np.number)):
+        return float(x)
+
+    s = _clean_text(x)
+    if s in {"", "-", "—"}:
+        return np.nan
+
+    s = s.replace(" ", "")
+
+    # 1 255.0 -> 1255.0
+    # 126 600.00 -> 126600.00
+    # 1.255,50 -> 1255.50
+    if re.fullmatch(r"-?\d{1,3}(\.\d{3})*,\d+", s):
+        s = s.replace(".", "").replace(",", ".")
+    elif re.fullmatch(r"-?\d+,\d+", s):
+        s = s.replace(",", ".")
+    else:
+        s = s.replace(",", "")
+
+    try:
+        return float(s)
+    except Exception:
+        return np.nan
+
+def _format_ru_number(x: Any, decimals: int = 2) -> str:
+    if pd.isna(x):
+        return "—"
+    s = f"{float(x):,.{decimals}f}".replace(",", " ")
+    return s.replace(".", ",")
+
+def _flatten_column_name(col: Any) -> str:
+    if isinstance(col, tuple):
+        parts = [str(x) for x in col if str(x) not in {"", "None"}]
+        return " | ".join(parts)
+    return str(col)
+
+def _read_uploaded_broker_file_raw(uploaded_file) -> pd.DataFrame:
+    file_name = str(uploaded_file.name).lower()
+    file_bytes = uploaded_file.getvalue()
+
+    if file_name.endswith(".csv"):
+        last_error = None
+        for enc in ["utf-8-sig", "cp1251", "utf-8"]:
+            try:
+                return pd.read_csv(
+                    BytesIO(file_bytes),
+                    header=None,
+                    dtype=str,
+                    sep=None,
+                    engine="python",
+                    encoding=enc,
+                )
+            except Exception as e:
+                last_error = e
+        raise RuntimeError(f"Не удалось прочитать CSV: {last_error}")
+
+    try:
+        return pd.read_excel(BytesIO(file_bytes), header=None, dtype=str)
+    except Exception as e:
+        raise RuntimeError(f"Не удалось прочитать Excel-файл {uploaded_file.name}: {e}")
+
+def _find_broker_header_row(raw: pd.DataFrame, scan_rows: int = 40) -> int:
+    alias_keys = set(BROKER_REPORT_ALIASES.keys())
+    must_have = {
+        "дата и время заключения сделки",
+        "код инструмента",
+        "направление",
+    }
+
+    best_idx = None
+    best_score = -1
+
+    max_rows = min(scan_rows, len(raw))
+
+    for i in range(max_rows):
+        vals = [_normalize_header_name(v) for v in raw.iloc[i].tolist()]
+        score = sum(1 for v in vals if v in alias_keys)
+
+        if score > best_score:
+            best_score = score
+            best_idx = i
+
+        if score >= 3 and len(must_have.intersection(set(vals))) >= 2:
+            return i
+
+    if best_idx is None or best_score < 3:
+        raise RuntimeError("Не удалось определить строку заголовков в брокерском отчете.")
+
+    return int(best_idx)
+
+def _extract_client_code(raw: pd.DataFrame) -> str:
+    top = raw.head(20).fillna("").astype(str)
+
+    for _, row in top.iterrows():
+        line = " | ".join(row.tolist())
+        m = re.search(r"код клиента[:\s]+([A-Za-z0-9_-]+)", line, flags=re.IGNORECASE)
+        if m:
+            return m.group(1)
+
+    return ""
+
+def _guess_broker_name(filename: str) -> str:
+    name = str(filename).lower()
+    for key, broker in BROKER_NAME_GUESSES.items():
+        if key in name:
+            return broker
+    return ""
+
+def _resolve_broker_fund(instrument_code: Any, instrument_name: Any) -> str:
+    code_key = _normalize_fund_key(instrument_code)
+    name_key = _normalize_fund_key(instrument_name)
+
+    if code_key in BROKER_FUND_ALIASES:
+        return BROKER_FUND_ALIASES[code_key]
+
+    if name_key in BROKER_FUND_ALIASES:
+        return BROKER_FUND_ALIASES[name_key]
+
+    if _clean_text(instrument_code) in FUND_MAP:
+        return FUND_MAP[_clean_text(instrument_code)]
+
+    if _clean_text(instrument_name):
+        return _clean_text(instrument_name)
+
+    return _clean_text(instrument_code)
+
+def _drop_duplicate_headers_inside_body(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+
+    if "trade_datetime" in out.columns:
+        out = out[
+            out["trade_datetime"].map(
+                lambda x: _normalize_header_name(x) != "дата и время заключения сделки"
+            )
+        ].copy()
+
+    return out
+
+def parse_broker_report(uploaded_file, broker_name_override: str = "") -> pd.DataFrame:
+    raw = _read_uploaded_broker_file_raw(uploaded_file)
+    if raw.empty:
+        return pd.DataFrame()
+
+    header_row = _find_broker_header_row(raw)
+    client_code = _extract_client_code(raw.iloc[:header_row + 1].copy())
+
+    raw_header = raw.iloc[header_row].tolist()
+    normalized_header = [_normalize_header_name(x) for x in raw_header]
+    canonical_header = [BROKER_REPORT_ALIASES.get(x, x) for x in normalized_header]
+    canonical_header = _make_unique_columns(canonical_header)
+
+    df = raw.iloc[header_row + 1:].copy()
+    df.columns = canonical_header
+    df = df.dropna(how="all").copy()
+    df = _drop_duplicate_headers_inside_body(df)
+
+    for col in [
+        "trade_datetime", "deal_number", "order_number", "instrument_code", "instrument_name",
+        "market", "direction", "qty", "price", "amount", "settlement_date"
+    ]:
+        if col not in df.columns:
+            df[col] = np.nan
+
+    broker_name = _clean_text(broker_name_override) or _guess_broker_name(uploaded_file.name) or "Не указан"
+
+    df["broker"] = broker_name
+    df["source_file"] = str(uploaded_file.name)
+    df["client_code"] = client_code
+
+    for col in ["deal_number", "order_number", "instrument_code", "instrument_name", "market", "direction"]:
+        df[col] = df[col].map(_clean_text)
+
+    df["trade_datetime"] = pd.to_datetime(df["trade_datetime"], errors="coerce", dayfirst=True)
+    df["trade_date"] = df["trade_datetime"].dt.date
+
+    df["settlement_date"] = pd.to_datetime(df["settlement_date"], errors="coerce", dayfirst=True).dt.date
+
+    for col in ["qty", "price", "amount"]:
+        df[col] = df[col].map(_parse_num_mixed)
+
+    # если объем не прочитался, пробуем восстановить как qty * price
+    df["amount"] = np.where(
+        df["amount"].notna(),
+        df["amount"],
+        df["qty"] * df["price"],
+    )
+
+    df["direction"] = df["direction"].map(lambda x: _clean_text(x).capitalize())
+    df["fund"] = df.apply(
+        lambda r: _resolve_broker_fund(r.get("instrument_code"), r.get("instrument_name")),
+        axis=1,
+    )
+    df["trade_count"] = 1
+
+    # оставляем только строки, похожие на реальные сделки
+    df = df[
+        df["trade_datetime"].notna() &
+        (df["instrument_code"].map(_clean_text) != "") &
+        (df["direction"].map(_clean_text) != "")
+    ].copy()
+
+    keep_cols = [
+        "broker",
+        "client_code",
+        "source_file",
+        "trade_datetime",
+        "trade_date",
+        "deal_number",
+        "order_number",
+        "instrument_code",
+        "instrument_name",
+        "fund",
+        "market",
+        "direction",
+        "qty",
+        "price",
+        "amount",
+        "settlement_date",
+        "trade_count",
+    ]
+
+    for col in keep_cols:
+        if col not in df.columns:
+            df[col] = np.nan
+
+    return df[keep_cols].reset_index(drop=True)
+
+def combine_broker_reports(frames: List[pd.DataFrame]) -> pd.DataFrame:
+    if not frames:
+        return pd.DataFrame()
+
+    df = pd.concat(frames, ignore_index=True)
+
+    dedup_subset = [
+        "broker",
+        "trade_datetime",
+        "deal_number",
+        "order_number",
+        "instrument_code",
+        "direction",
+        "qty",
+        "price",
+        "amount",
+    ]
+
+    for col in dedup_subset:
+        if col not in df.columns:
+            df[col] = np.nan
+
+    df = (
+        df.sort_values(["trade_datetime", "source_file"], na_position="last")
+          .drop_duplicates(subset=dedup_subset)
+          .reset_index(drop=True)
+    )
+
+    return df
+
+def build_broker_pivot(
+    df: pd.DataFrame,
+    row_fields: List[str],
+    column_field: Optional[str],
+    metric_labels: List[str],
+) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    if not row_fields:
+        raise RuntimeError("Для сводной нужно выбрать хотя бы одно поле в строках.")
+
+    metric_aggs: Dict[str, str] = {}
+    field_to_metric_label: Dict[str, str] = {}
+
+    for metric_label in metric_labels:
+        field, agg = BROKER_VALUE_SPECS[metric_label]
+        metric_aggs[field] = agg
+        field_to_metric_label[field] = metric_label
+
+    if not metric_aggs:
+        raise RuntimeError("Для сводной нужно выбрать хотя бы один показатель.")
+
+    pivot = pd.pivot_table(
+        df,
+        index=row_fields,
+        columns=[column_field] if column_field else None,
+        values=list(metric_aggs.keys()),
+        aggfunc=metric_aggs,
+        margins=True,
+        margins_name="Общий итог",
+        dropna=False,
+    )
+
+    if isinstance(pivot.columns, pd.MultiIndex):
+        new_cols = []
+        for col in pivot.columns:
+            col_list = list(col)
+            if col_list and col_list[0] in field_to_metric_label:
+                col_list[0] = field_to_metric_label[col_list[0]]
+            new_cols.append(tuple(col_list))
+        pivot.columns = pd.MultiIndex.from_tuples(new_cols)
+    else:
+        pivot.columns = [field_to_metric_label.get(c, c) for c in pivot.columns]
+
+    return pivot
+
+def style_broker_pivot(pivot: pd.DataFrame):
+    formatters = {}
+
+    for col in pivot.columns:
+        col_name = _flatten_column_name(col)
+
+        if "Цена" in col_name:
+            formatters[col] = lambda x, d=6: _format_ru_number(x, d)
+        elif "Кол-во" in col_name:
+            formatters[col] = lambda x, d=0: _format_ru_number(x, d)
+        elif "Объем" in col_name or "Объ" in col_name:
+            formatters[col] = lambda x, d=2: _format_ru_number(x, d)
+        elif "Количество сделок" in col_name:
+            formatters[col] = lambda x, d=0: _format_ru_number(x, d)
+
+    return pivot.style.format(formatters, na_rep="—")
+
+def broker_pivot_to_export_df(pivot: pd.DataFrame) -> pd.DataFrame:
+    out = pivot.copy()
+
+    if isinstance(out.columns, pd.MultiIndex):
+        out.columns = [_flatten_column_name(c) for c in out.columns]
+    else:
+        out.columns = [str(c) for c in out.columns]
+
+    out = out.reset_index()
+    out = out.rename(columns=BROKER_DIMENSION_LABELS)
+    return out
+
+def broker_raw_to_display_df(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+
+    out["trade_datetime"] = pd.to_datetime(out["trade_datetime"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
+    out["settlement_date"] = pd.to_datetime(out["settlement_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+
+    out = out.rename(columns={
+        "broker": "Брокер",
+        "client_code": "Код клиента",
+        "source_file": "Файл",
+        "trade_datetime": "Дата и время сделки",
+        "trade_date": "Дата сделки",
+        "deal_number": "Номер сделки",
+        "order_number": "Номер заявки",
+        "instrument_code": "Код инструмента",
+        "instrument_name": "Инструмент",
+        "fund": "Фонд",
+        "market": "Рынок",
+        "direction": "Направление",
+        "qty": "Кол-во",
+        "price": "Цена",
+        "amount": "Объем",
+        "settlement_date": "Дата расчетов",
+    })
+
+    return out
+
+def filter_broker_df(
+    df: pd.DataFrame,
+    date_field: str,
+    date_range_value: Any,
+    selected_funds: List[str],
+    selected_brokers: List[str],
+    selected_directions: List[str],
+    instrument_substring: str,
+) -> pd.DataFrame:
+    out = df.copy()
+
+    if date_field in out.columns:
+        if isinstance(date_range_value, tuple) and len(date_range_value) == 2:
+            d1, d2 = date_range_value
+            out = out[
+                out[date_field].notna() &
+                (out[date_field] >= d1) &
+                (out[date_field] <= d2)
+            ].copy()
+
+    if selected_funds:
+        out = out[out["fund"].isin(selected_funds)].copy()
+
+    if selected_brokers:
+        out = out[out["broker"].isin(selected_brokers)].copy()
+
+    if selected_directions:
+        out = out[out["direction"].isin(selected_directions)].copy()
+
+    instrument_substring = _clean_text(instrument_substring)
+    if instrument_substring:
+        mask = (
+            out["instrument_code"].astype(str).str.contains(instrument_substring, case=False, na=False) |
+            out["instrument_name"].astype(str).str.contains(instrument_substring, case=False, na=False)
+        )
+        out = out[mask].copy()
+
+    return out
 
 # -----------------------
 # API helpers
@@ -2383,6 +2901,278 @@ def render_moex_tab() -> None:
     )
 
 # -----------------------
+# Рендер вкладки "Отчеты брокеров"
+# -----------------------
+def render_broker_reports_tab() -> None:
+    st.subheader("Загрузка и сводка брокерских отчетов")
+    st.caption(
+        "Загрузите один или несколько файлов с отчетами по сделкам. "
+        "Приложение объединит сделки, уберет дубли и построит сводную таблицу."
+    )
+
+    uploaded_files = st.file_uploader(
+        "Загрузите отчеты брокеров",
+        type=["xlsx", "xls", "csv"],
+        accept_multiple_files=True,
+        key="broker_reports_upload",
+    )
+
+    if not uploaded_files:
+        st.info("Загрузите хотя бы один файл.")
+        return
+
+    with st.expander("Соответствие файл -> брокер", expanded=True):
+        broker_name_overrides: Dict[str, str] = {}
+        for uf in uploaded_files:
+            default_broker = _guess_broker_name(uf.name)
+            broker_name_overrides[uf.name] = st.text_input(
+                f"Брокер для файла: {uf.name}",
+                value=default_broker,
+                key=f"broker_name_override::{uf.name}",
+            )
+
+    parsed_parts: List[pd.DataFrame] = []
+    errors: List[str] = []
+    source_rows_total = 0
+
+    with st.spinner("Читаю и объединяю файлы..."):
+        for uf in uploaded_files:
+            try:
+                parsed = parse_broker_report(
+                    uf,
+                    broker_name_override=broker_name_overrides.get(uf.name, ""),
+                )
+                source_rows_total += len(parsed)
+                if not parsed.empty:
+                    parsed_parts.append(parsed)
+            except Exception as e:
+                errors.append(f"{uf.name}: {e}")
+
+    if errors:
+        st.warning("Часть файлов не удалось обработать:\n\n" + "\n".join(errors))
+
+    if not parsed_parts:
+        st.error("Не удалось получить ни одной таблицы сделок из загруженных файлов.")
+        return
+
+    deals_df = combine_broker_reports(parsed_parts)
+
+    if deals_df.empty:
+        st.error("После объединения таблица сделок оказалась пустой.")
+        return
+
+    duplicate_rows_removed = int(source_rows_total - len(deals_df))
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Файлов загружено", len(uploaded_files))
+    c2.metric("Сделок после объединения", len(deals_df))
+    c3.metric("Удалено дублей", duplicate_rows_removed)
+    c4.metric("Брокеров", deals_df["broker"].nunique())
+
+    known_funds = [x for x in ["АКЦЕНТ IV", "Акцент 5"] if x in deals_df["fund"].dropna().unique().tolist()]
+    all_funds = sorted([x for x in deals_df["fund"].dropna().unique().tolist() if _clean_text(x)])
+    all_brokers = sorted([x for x in deals_df["broker"].dropna().unique().tolist() if _clean_text(x)])
+    all_directions = sorted([x for x in deals_df["direction"].dropna().unique().tolist() if _clean_text(x)])
+
+    trade_dates = sorted([x for x in deals_df["trade_date"].dropna().unique().tolist()])
+    settlement_dates = sorted([x for x in deals_df["settlement_date"].dropna().unique().tolist()])
+
+    with st.expander("Фильтры", expanded=True):
+        date_basis_label = st.radio(
+            "Фильтровать по дате",
+            options=["Дата сделки", "Дата расчетов"],
+            horizontal=True,
+            key="broker_date_basis",
+        )
+
+        date_field = "trade_date" if date_basis_label == "Дата сделки" else "settlement_date"
+        available_dates = trade_dates if date_field == "trade_date" else settlement_dates
+
+        if not available_dates:
+            st.warning("Для выбранного типа даты нет значений. Использую дату сделки.")
+            date_field = "trade_date"
+            available_dates = trade_dates
+
+        if available_dates:
+            default_date_range = (available_dates[0], available_dates[-1])
+            selected_date_range = st.date_input(
+                "Период",
+                value=default_date_range,
+                min_value=available_dates[0],
+                max_value=available_dates[-1],
+                key="broker_date_range",
+            )
+        else:
+            selected_date_range = None
+
+        col_f1, col_f2, col_f3 = st.columns(3)
+
+        with col_f1:
+            selected_funds = st.multiselect(
+                "Фонды",
+                options=all_funds,
+                default=known_funds if known_funds else all_funds,
+                key="broker_selected_funds",
+            )
+
+        with col_f2:
+            selected_brokers = st.multiselect(
+                "Брокеры",
+                options=all_brokers,
+                default=all_brokers,
+                key="broker_selected_brokers",
+            )
+
+        with col_f3:
+            selected_directions = st.multiselect(
+                "Направление",
+                options=all_directions,
+                default=all_directions,
+                key="broker_selected_directions",
+            )
+
+        instrument_substring = st.text_input(
+            "Поиск по коду или названию инструмента",
+            value="",
+            key="broker_instrument_substring",
+        )
+
+    df_filtered = filter_broker_df(
+        deals_df,
+        date_field=date_field,
+        date_range_value=selected_date_range,
+        selected_funds=selected_funds,
+        selected_brokers=selected_brokers,
+        selected_directions=selected_directions,
+        instrument_substring=instrument_substring,
+    )
+
+    if df_filtered.empty:
+        st.warning("По выбранным фильтрам нет данных.")
+        return
+
+    tab_raw, tab_pivot = st.tabs(["Сырые сделки", "Сводная таблица"])
+
+    with tab_raw:
+        st.markdown("### Сырые сделки после объединения и фильтрации")
+
+        raw_show = broker_raw_to_display_df(df_filtered)
+
+        raw_display_cols = [
+            "Брокер", "Файл", "Код клиента", "Дата и время сделки", "Дата сделки",
+            "Номер сделки", "Номер заявки", "Код инструмента", "Инструмент",
+            "Фонд", "Рынок", "Направление", "Кол-во", "Цена", "Объем", "Дата расчетов",
+        ]
+        raw_display_cols = [c for c in raw_display_cols if c in raw_show.columns]
+
+        st.dataframe(
+            raw_show[raw_display_cols].sort_values(["Дата и время сделки", "Фонд", "Брокер"], na_position="last"),
+            width="stretch",
+            hide_index=True,
+        )
+
+        raw_export = raw_show[raw_display_cols].copy()
+        xlsx_raw = df_to_xlsx_bytes(raw_export, sheet_name="Сделки")
+        st.download_button(
+            "Скачать Excel: сырые сделки",
+            data=xlsx_raw,
+            file_name="broker_raw_deals.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width="stretch",
+            key="broker_download_raw",
+        )
+
+    with tab_pivot:
+        st.markdown("### Сводная таблица")
+
+        dimension_labels = list(BROKER_DIMENSION_LABELS.values())
+        label_to_field = {v: k for k, v in BROKER_DIMENSION_LABELS.items()}
+
+        with st.expander("Настройка сводной", expanded=True):
+            selected_row_labels = st.multiselect(
+                "Строки",
+                options=dimension_labels,
+                default=["Фонд", "Направление", "Брокер"],
+                key="broker_pivot_rows",
+            )
+
+            selected_column_label = st.selectbox(
+                "Колонки",
+                options=["Нет"] + dimension_labels,
+                index=0,
+                key="broker_pivot_columns",
+            )
+
+            selected_metrics = st.multiselect(
+                "Показатели",
+                options=list(BROKER_VALUE_SPECS.keys()),
+                default=[
+                    "Среднее по полю Цена",
+                    "Сумма по полю Кол-во",
+                    "Сумма по полю Объем",
+                ],
+                key="broker_pivot_metrics",
+            )
+
+        row_fields = [label_to_field[x] for x in selected_row_labels]
+        column_field = None if selected_column_label == "Нет" else label_to_field[selected_column_label]
+
+        if column_field and column_field in row_fields:
+            row_fields = [x for x in row_fields if x != column_field]
+
+        if not row_fields:
+            st.warning("Выберите хотя бы одно поле в блоке 'Строки'.")
+            return
+
+        if not selected_metrics:
+            st.warning("Выберите хотя бы один показатель.")
+            return
+
+        try:
+            pivot = build_broker_pivot(
+                df_filtered,
+                row_fields=row_fields,
+                column_field=column_field,
+                metric_labels=selected_metrics,
+            )
+        except Exception as e:
+            st.error(f"Не удалось построить сводную: {e}")
+            return
+
+        if pivot.empty:
+            st.warning("Сводная таблица пустая.")
+            return
+
+        st.dataframe(
+            style_broker_pivot(pivot),
+            width="stretch",
+        )
+
+        pivot_export = broker_pivot_to_export_df(pivot)
+        raw_export_for_bundle = broker_raw_to_display_df(df_filtered)
+
+        xlsx_pivot = dfs_to_xlsx_bytes({
+            "Сделки": raw_export_for_bundle,
+            "Сводная": pivot_export,
+        })
+
+        st.download_button(
+            "Скачать Excel: сводная + сделки",
+            data=xlsx_pivot,
+            file_name="broker_reports_pivot.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width="stretch",
+            key="broker_download_pivot",
+        )
+
+        with st.expander("Плоский вид сводной для проверки", expanded=False):
+            st.dataframe(
+                pivot_export,
+                width="stretch",
+                hide_index=True,
+            )
+
+# -----------------------
 # Главный UI
 # -----------------------
 st.title("Торги ЗПИФ")
@@ -2393,7 +3183,7 @@ if not API_LOGIN or not API_PASS:
 
 section = st.segmented_control(
     "Вкладка",
-    options=["Торги Ф4 и Ф5", "Основные графики", "Доходность", "Мосбиржа"],
+    options=[["Торги Ф4 и Ф5", "Основные графики", "Доходность", "Мосбиржа", "Отчеты брокеров"],
     default="Торги Ф4 и Ф5",
     key="main_section",
 )
@@ -2442,3 +3232,6 @@ elif section == "Доходность":
 
 elif section == "Мосбиржа":
     render_moex_tab()
+
+elif section == "Отчеты брокеров":
+    render_broker_reports_tab()
