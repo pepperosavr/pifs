@@ -521,25 +521,28 @@ def _read_html_broker_file_raw(uploaded_file) -> pd.DataFrame:
 
     for tbl in tables:
         df = tbl.copy()
-        df.columns = _flatten_html_columns(df.columns)
+        flat_cols = _flatten_html_columns(df.columns)
+        df.columns = flat_cols
         sc = _score_broker_table(df)
         if sc > best_score:
             best_score = sc
-            best_df = df
+            best_df = df.copy()
 
     if best_df is None or best_score < 3:
         raise RuntimeError(
             f"Не удалось определить таблицу сделок в HTML-файле {uploaded_file.name}."
         )
 
-    best_df = best_df.copy()
-    best_df.columns = _flatten_html_columns(best_df.columns)
+    # Сохраняем заголовки ДО перенумерации колонок
+    header_values = _flatten_html_columns(best_df.columns.tolist())
 
-    # Приводим HTML-таблицу к тому же виду, который ожидает parse_broker_report:
-    # первая строка внутри raw должна содержать заголовки
-    header_row = pd.DataFrame([best_df.columns.tolist()])
-    raw = pd.concat([header_row, best_df.reset_index(drop=True)], ignore_index=True)
-    raw.columns = list(range(raw.shape[1]))
+    # Приводим данные к табличному raw-виду:
+    # 1-я строка = заголовки, далее строки данных
+    body_df = best_df.reset_index(drop=True).copy()
+    body_df.columns = list(range(body_df.shape[1]))
+
+    header_row = pd.DataFrame([header_values], columns=body_df.columns)
+    raw = pd.concat([header_row, body_df], ignore_index=True)
 
     return raw
 
@@ -578,46 +581,6 @@ def _score_broker_table(df: pd.DataFrame) -> int:
 
     return score
 
-
-def _read_html_broker_file_raw(uploaded_file) -> pd.DataFrame:
-    file_bytes = uploaded_file.getvalue()
-    html_text = _decode_html_bytes(file_bytes)
-
-    try:
-        tables = pd.read_html(StringIO(html_text))
-    except Exception as e:
-        raise RuntimeError(f"Не удалось прочитать HTML-таблицы из файла {uploaded_file.name}: {e}")
-
-    if not tables:
-        raise RuntimeError(f"В HTML-файле {uploaded_file.name} не найдено таблиц.")
-
-    best_df = None
-    best_score = -1
-
-    for tbl in tables:
-        df = tbl.copy()
-        df.columns = _flatten_html_columns(df.columns)
-        sc = _score_broker_table(df)
-        if sc > best_score:
-            best_score = sc
-            best_df = df
-
-    if best_df is None or best_score < 3:
-        raise RuntimeError(
-            f"Не удалось определить таблицу сделок в HTML-файле {uploaded_file.name}."
-        )
-
-    best_df = best_df.copy()
-    best_df.columns = _flatten_html_columns(best_df.columns)
-
-    # Делаем такой же raw-формат, как у Excel:
-    # первая строка содержит заголовки таблицы
-    header_row = pd.DataFrame([best_df.columns.tolist()])
-    raw = pd.concat([header_row, best_df.reset_index(drop=True)], ignore_index=True)
-    raw.columns = list(range(raw.shape[1]))
-
-    return raw
-
 def _read_uploaded_broker_file_raw(uploaded_file) -> pd.DataFrame:
     file_name = str(uploaded_file.name).lower()
     file_bytes = uploaded_file.getvalue()
@@ -650,6 +613,11 @@ def _read_uploaded_broker_file_raw(uploaded_file) -> pd.DataFrame:
 
 def _find_broker_header_row(raw: pd.DataFrame, scan_rows: int = 40) -> int:
     alias_keys = set(BROKER_REPORT_ALIASES.keys())
+    if len(raw) > 0:
+        first_vals = [_normalize_header_name(v) for v in raw.iloc[0].tolist()]
+        first_score = sum(1 for v in first_vals if v in alias_keys)
+        if first_score >= 3:
+            return 0
     must_have = {
         "дата и время заключения сделки",
         "код инструмента",
@@ -728,7 +696,7 @@ def _drop_duplicate_headers_inside_body(df: pd.DataFrame) -> pd.DataFrame:
 def parse_broker_report(uploaded_file, broker_name_override: str = "") -> pd.DataFrame:
     raw = _read_uploaded_broker_file_raw(uploaded_file)
     if raw.empty:
-        return pd.DataFrame()
+        raise RuntimeError("Файл прочитан, но raw-таблица оказалась пустой.")
 
     header_row = _find_broker_header_row(raw)
     client_code = _extract_client_code(raw.iloc[:header_row + 1].copy())
@@ -742,6 +710,12 @@ def parse_broker_report(uploaded_file, broker_name_override: str = "") -> pd.Dat
     df.columns = canonical_header
     df = df.dropna(how="all").copy()
     df = _drop_duplicate_headers_inside_body(df)
+
+    if df.empty:
+        raise RuntimeError(
+            "После выделения тела таблицы не осталось строк. "
+            f"Распознанные колонки: {canonical_header}"
+        )
 
     for col in [
         "trade_datetime", "deal_number", "order_number", "instrument_code", "instrument_name",
@@ -787,6 +761,13 @@ def parse_broker_report(uploaded_file, broker_name_override: str = "") -> pd.Dat
         (df["instrument_code"].map(_clean_text) != "") &
         (df["direction"].map(_clean_text) != "")
     ].copy()
+
+    if df.empty:
+        preview_cols = [c for c in ["trade_datetime", "instrument_code", "instrument_name", "direction", "qty", "price", "amount"] if c in df.columns]
+        raise RuntimeError(
+            "После фильтрации не осталось ни одной валидной сделки. "
+            "Проверьте, распознались ли дата сделки, код инструмента и направление."
+        )
 
     keep_cols = [
         "broker",
@@ -3099,9 +3080,16 @@ def render_broker_reports_tab() -> None:
                     uf,
                     broker_name_override=broker_name_overrides.get(uf.name, ""),
                 )
-                source_rows_total += len(parsed)
-                if not parsed.empty:
+
+                if parsed.empty:
+                    errors.append(
+                        f"{uf.name}: файл прочитан, но после очистки не осталось ни одной строки сделки. "
+                        f"Скорее всего, не распознались колонки или все строки были отфильтрованы."
+                    )
+                else:
+                    source_rows_total += len(parsed)
                     parsed_parts.append(parsed)
+
             except Exception as e:
                 errors.append(f"{uf.name}: {e}")
 
