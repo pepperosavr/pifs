@@ -783,7 +783,7 @@ if mode == "Режим истории":
     )
 
     # Длина периода
-    max_window = min(365, len(available_dates))
+    max_window = min(400, len(available_dates))
     if max_window <= 1:
         window = 1
     else:
