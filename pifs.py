@@ -13,6 +13,7 @@ import streamlit as st
 import plotly.express as px
 from datetime import datetime, timezone, date
 from pathlib import Path
+from io import BytesIO
 
 def _sum_or_single(s: pd.Series, decimals: int = 0) -> float:
     x = pd.to_numeric(s, errors="coerce").dropna()
@@ -124,6 +125,14 @@ MOEX_CODE_TO_ISIN = {secid: isin for isin, secid in ISIN_TO_MOEX_CODE.items()}
 # -----------------------
 # API helpers
 # -----------------------
+
+def make_excel_file(df_export: pd.DataFrame) -> bytes:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df_export.to_excel(writer, index=False, sheet_name="log_turnover_data")
+    output.seek(0)
+    return output.getvalue()
+    
 def do_post_request(url: str, body: dict, token: str | None) -> dict | None:
     headers = {"Content-Type": "application/json"}
     if token:
@@ -1177,6 +1186,44 @@ if mode == "Режим истории":
                 st.stop()
 
             val_pos["log10_value"] = np.log10(val_pos["value"])
+
+    # таблица для выгрузки в Excel
+            export_df = (
+                val_pos[[
+                    "tradedate",
+                    "fund",
+                    "isin",
+                    "label",
+                    "value",
+                    "log10_value",
+                    "close",
+                    "volume",
+                    "numtrades",
+                ]]
+                .copy()
+                .rename(columns={
+                    "tradedate": "Дата",
+                    "fund": "Фонд",
+                    "isin": "ISIN",
+                    "label": "Метка",
+                    "value": "Оборот, руб",
+                    "log10_value": "log10(оборота)",
+                    "close": "Цена закрытия, руб",
+                    "volume": "Объем бумаг",
+                    "numtrades": "Количество сделок",
+                })
+                .sort_values(["Фонд", "Дата"])
+            )
+
+            excel_data = make_excel_file(export_df)
+
+            st.download_button(
+                label="Скачать данные графика в Excel",
+                data=excel_data,
+                file_name=f"log_turnover_{start_date}_{end_date}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_log_turnover_excel",
+            )
 
             fig_val = px.line(
                 val_pos,
