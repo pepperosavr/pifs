@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from io import BytesIO
 
@@ -426,7 +426,6 @@ else:
     date_from = "2025-01-01T00:00:00Z"
     df = load_df(ZPIF_SECIDS, date_from, date_to)
 
-\
 df = df[df["isin"].isin(TARGET_ISINS)].copy()
 
 if df.empty:
@@ -1183,194 +1182,217 @@ if mode == "Режим истории":
 
 
         # --- TAB 2: Логарифмический график оборота (value) ---
-       with tab_log:
-        val_pos = vol_df[vol_df["value"] > 0].copy()
-        if val_pos.empty:
-            st.warning("Для логарифмической шкалы нужны положительные значения value > 0.")
-            st.stop()
+        with tab_log:
+            val_pos = vol_df[vol_df["value"] > 0].copy()
 
-    # Приводим tradedate к pandas datetime для удобной агрегации
-        val_pos["tradedate"] = pd.to_datetime(val_pos["tradedate"])
+            if val_pos.empty:
+                st.warning("Для логарифмической шкалы нужны положительные значения value > 0.")
+            else:
+                # для удобной агрегации
+                val_pos["tradedate"] = pd.to_datetime(val_pos["tradedate"])
 
-    # Правило агрегации:
-    # если окно длинное, агрегируем поквартально
-        freq_mode = st.radio(
-            "Частота отображения",
-            options=["Авто", "По дням", "По кварталам"],
-            horizontal=True,
-        )
-
-        if freq_mode == "По кварталам":
-            use_quarterly = True
-        elif freq_mode == "По дням":
-            use_quarterly = False
-        else:
-            use_quarterly = window >= 64
-
-        if use_quarterly:
-            val_pos["quarter_period"] = val_pos["tradedate"].dt.to_period("Q")
-            val_pos["quarter_start"] = val_pos["quarter_period"].dt.start_time
-            val_pos["quarter_label"] = val_pos["quarter_start"].apply(quarter_label)
-
-            plot_df = (
-                val_pos.groupby(
-                    ["label", "fund", "isin", "quarter_period", "quarter_start", "quarter_label"],
-                    as_index=False
+                freq_mode = st.radio(
+                    "Частота отображения",
+                    options=["Авто", "По дням", "По кварталам"],
+                    horizontal=True,
+                    key="turnover_log_freq_mode",
                 )
-                .agg(
-                    value=("value", "sum"),
-                    volume=("volume", "sum"),
-                    numtrades=("numtrades", "sum"),
-                    close=("close", "last"),
-                )
-                .sort_values(["fund", "quarter_start"])
-            )
 
-            plot_df["log10_value"] = np.log10(plot_df["value"])
+                if freq_mode == "По кварталам":
+                    use_quarterly = True
+                elif freq_mode == "По дням":
+                    use_quarterly = False
+                else:
+                    use_quarterly = window >= 64
 
-           
+                # =========================
+                # КВАРТАЛЬНЫЙ РЕЖИМ
+                # =========================
+                if use_quarterly:
+                    val_pos["quarter_period"] = val_pos["tradedate"].dt.to_period("Q")
+                    val_pos["quarter_start"] = val_pos["quarter_period"].dt.start_time
+                    val_pos["quarter_label"] = val_pos["quarter_start"].apply(quarter_label)
 
-            export_df = (
-                plot_df[[
-                    "quarter_label",
-                    "fund",
-                    "isin",
-                    "label",
-                    "value",
-                    "log10_value",
-                    "close",
-                    "volume",
-                    "numtrades",
-                ]]
-                .copy()
-                .rename(columns={
-                    "quarter_label": "Период",
-                    "fund": "Фонд",
-                    "isin": "ISIN",
-                    "label": "Метка",
-                    "value": "Оборот, руб",
-                    "log10_value": "log10(оборота)",
-                    "close": "Цена закрытия на конец периода, руб",
-                    "volume": "Объем бумаг за период",
-                    "numtrades": "Количество сделок за период",
-                })
-                .sort_values(["Фонд", "Период"])
-            )
+                    plot_df = (
+                        val_pos.groupby(
+                            ["label", "fund", "isin", "quarter_period", "quarter_start", "quarter_label"],
+                            as_index=False
+                        )
+                        .agg(
+                            value=("value", "sum"),
+                            volume=("volume", "sum"),
+                            numtrades=("numtrades", "sum"),
+                            close=("close", "last"),
+                        )
+                        .sort_values(["fund", "quarter_start"])
+                    )
 
-            excel_data = make_excel_file(export_df)
+                    # дополнительная защита
+                    plot_df = plot_df[plot_df["value"] > 0].copy()
 
-            st.download_button(
-                label="Скачать квартальные данные в Excel",
-                data=excel_data,
-                file_name=f"log_turnover_quarterly_{start_date}_{end_date}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_log_turnover_quarterly_excel",
-            )
+                    if plot_df.empty:
+                        st.warning("После квартальной агрегации не осталось положительных значений оборота.")
+                    else:
+                        plot_df["log10_value"] = np.log10(plot_df["value"])
 
-            fig_val = px.line(
-                plot_df,
-                x="quarter_start",
-                y="value",
-                color="label",
-                custom_data=["quarter_label", "fund", "close", "volume", "numtrades", "log10_value"],
-                markers=True,
-                labels={"value": "Оборот, руб", "quarter_start": "Период"},
-            )
-            fig_val.update_yaxes(type="log")
-            fig_val.update_layout(separators=". ")
-            fig_val.update_traces(
-                hovertemplate=(
-                    "Период: %{customdata[0]}<br>"
-                    "Фонд: %{customdata[1]}<br>"
-                    "Оборот (руб): %{y:,.0f}<br>"
-                    "log10(оборота): %{customdata[5]:.3f}<br>"
-                    "Цена закрытия на конец периода: %{customdata[2]:,.2f}<br>"
-                    "Объем бумаг за период: %{customdata[3]:,.0f}<br>"
-                    "Сделок за период: %{customdata[4]:,.0f}<br>"
-                    "<extra>%{fullData.name}</extra>"
-                )
-            )
-            fig_val.update_xaxes(
-                tickmode="array",
-                tickvals=plot_df["quarter_start"].drop_duplicates().sort_values().tolist(),
-                ticktext=plot_df["quarter_label"].drop_duplicates().tolist(),
-            )
-            st.plotly_chart(fig_val, use_container_width=True)
+                        quarter_axis = (
+                            plot_df[["quarter_start", "quarter_label"]]
+                            .drop_duplicates()
+                            .sort_values("quarter_start")
+                        )
 
-        else:
-            plot_df = val_pos.copy()
-            plot_df["log10_value"] = np.log10(plot_df["value"])
+                        export_df = (
+                            plot_df.sort_values(["fund", "quarter_start"])[[
+                                "quarter_label",
+                                "fund",
+                                "isin",
+                                "label",
+                                "value",
+                                "log10_value",
+                                "close",
+                                "volume",
+                                "numtrades",
+                            ]]
+                            .copy()
+                            .rename(columns={
+                                "quarter_label": "Период",
+                                "fund": "Фонд",
+                                "isin": "ISIN",
+                                "label": "Метка",
+                                "value": "Оборот, руб",
+                                "log10_value": "log10(оборота)",
+                                "close": "Цена закрытия на конец периода, руб",
+                                "volume": "Объем бумаг за период",
+                                "numtrades": "Количество сделок за период",
+                            })
+                        )
 
-            export_df = (
-                plot_df[[
-                    "tradedate",
-                    "fund",
-                    "isin",
-                    "label",
-                    "value",
-                    "log10_value",
-                    "close",
-                    "volume",
-                    "numtrades",
-                ]]
-                .copy()
-                .rename(columns={
-                    "tradedate": "Дата",
-                    "fund": "Фонд",
-                    "isin": "ISIN",
-                    "label": "Метка",
-                    "value": "Оборот, руб",
-                    "log10_value": "log10(оборота)",
-                    "close": "Цена закрытия, руб",
-                    "volume": "Объем бумаг",
-                    "numtrades": "Количество сделок",
-                })
-                .sort_values(["Фонд", "Дата"])
-            )
+                        excel_data = make_excel_file(export_df)
 
-            excel_data = make_excel_file(export_df)
+                        st.download_button(
+                            label="Скачать квартальные данные в Excel",
+                            data=excel_data,
+                            file_name=f"log_turnover_quarterly_{start_date}_{end_date}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="download_log_turnover_quarterly_excel",
+                        )
 
-            st.download_button(
-                label="Скачать дневные данные в Excel",
-                data=excel_data,
-                file_name=f"log_turnover_daily_{start_date}_{end_date}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_log_turnover_daily_excel",
-            )
+                        fig_val = px.line(
+                            plot_df,
+                            x="quarter_start",
+                            y="value",
+                            color="label",
+                            custom_data=[
+                                "quarter_label",
+                                "fund",
+                                "close",
+                                "volume",
+                                "numtrades",
+                                "log10_value",
+                            ],
+                            markers=True,
+                            labels={"value": "Оборот, руб", "quarter_start": "Период"},
+                        )
 
-            fig_val = px.line(
-                plot_df,
-                x="tradedate",
-                y="value",
-                color="label",
-                custom_data=["log10_value", "fund", "close", "volume", "numtrades"],
-                markers=True,
-                labels={"value": "Оборот, руб", "tradedate": "Дата"},
-            )
-            fig_val.update_yaxes(type="log")
-            fig_val.update_layout(separators=". ")
-            fig_val.update_traces(
-                hovertemplate=(
-                    "Дата: %{x|%Y-%m-%d}<br>"
-                    "Фонд: %{customdata[1]}<br>"
-                    "Оборот (руб): %{y:,.0f}<br>"
-                    "log10(оборота): %{customdata[0]:.3f}<br>"
-                    "Цена закрытия: %{customdata[2]:,.2f}<br>"
-                    "Объем бумаг: %{customdata[3]:,.0f}<br>"
-                    "Сделок: %{customdata[4]:,.0f}<br>"
-                    "<extra>%{fullData.name}</extra>"
-                )
-            )
-            st.plotly_chart(fig_val, use_container_width=True)
+                        fig_val.update_yaxes(type="log")
+                        fig_val.update_layout(separators=". ")
 
+                        fig_val.update_traces(
+                            hovertemplate=(
+                                "Период: %{customdata[0]}<br>"
+                                "Фонд: %{customdata[1]}<br>"
+                                "Оборот (руб): %{y:,.0f}<br>"
+                                "log10(оборота): %{customdata[5]:.3f}<br>"
+                                "Цена закрытия на конец периода: %{customdata[2]:,.2f}<br>"
+                                "Объем бумаг за период: %{customdata[3]:,.0f}<br>"
+                                "Сделок за период: %{customdata[4]:,.0f}<br>"
+                                "<extra>%{fullData.name}</extra>"
+                            )
+                        )
+
+                        fig_val.update_xaxes(
+                            tickmode="array",
+                            tickvals=quarter_axis["quarter_start"].tolist(),
+                            ticktext=quarter_axis["quarter_label"].tolist(),
+                        )
+
+                        st.plotly_chart(fig_val, use_container_width=True)
+
+                # =========================
+                # ДНЕВНОЙ РЕЖИМ
+                # =========================
+                else:
+                    plot_df = val_pos[val_pos["value"] > 0].copy()
+
+                    if plot_df.empty:
+                        st.warning("Нет положительных значений оборота для дневного графика.")
+                    else:
+                        plot_df["log10_value"] = np.log10(plot_df["value"])
+
+                        export_df = (
+                            plot_df.sort_values(["fund", "tradedate"])[[
+                                "tradedate",
+                                "fund",
+                                "isin",
+                                "label",
+                                "value",
+                                "log10_value",
+                                "close",
+                                "volume",
+                                "numtrades",
+                            ]]
+                            .copy()
+                            .rename(columns={
+                                "tradedate": "Дата",
+                                "fund": "Фонд",
+                                "isin": "ISIN",
+                                "label": "Метка",
+                                "value": "Оборот, руб",
+                                "log10_value": "log10(оборота)",
+                                "close": "Цена закрытия, руб",
+                                "volume": "Объем бумаг",
+                                "numtrades": "Количество сделок",
+                            })
+                        )
+
+                        excel_data = make_excel_file(export_df)
+
+                        st.download_button(
+                            label="Скачать дневные данные в Excel",
+                            data=excel_data,
+                            file_name=f"log_turnover_daily_{start_date}_{end_date}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="download_log_turnover_daily_excel",
+                        )
+
+                        fig_val = px.line(
+                            plot_df,
+                            x="tradedate",
+                            y="value",
+                            color="label",
+                            custom_data=["log10_value", "fund", "close", "volume", "numtrades"],
+                            markers=True,
+                            labels={"value": "Оборот, руб", "tradedate": "Дата"},
+                        )
+
+                        fig_val.update_yaxes(type="log")
+                        fig_val.update_layout(separators=". ")
+
+                        fig_val.update_traces(
+                            hovertemplate=(
+                                "Дата: %{x|%Y-%m-%d}<br>"
+                                "Фонд: %{customdata[1]}<br>"
+                                "Оборот (руб): %{y:,.0f}<br>"
+                                "log10(оборота): %{customdata[0]:.3f}<br>"
+                                "Цена закрытия: %{customdata[2]:,.2f}<br>"
+                                "Объем бумаг: %{customdata[3]:,.0f}<br>"
+                                "Сделок: %{customdata[4]:,.0f}<br>"
+                                "<extra>%{fullData.name}</extra>"
+                            )
+                        )
+
+                        st.plotly_chart(fig_val, use_container_width=True)
         # --- TAB 3: Гистограмма (горизонтальная) суммарного оборота за окно ---
-        with tab_hist:
-            sum_df = (
-                vol_df.groupby(["label", "fund", "isin"], as_index=False)
-                      .agg(value_sum=("value", "sum"))
-                      .sort_values("value_sum", ascending=True)
-            )
-
         with tab_hist:
             sum_df = (
                 vol_df.groupby(["label", "fund", "isin"], as_index=False)
