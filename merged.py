@@ -2074,7 +2074,7 @@ def render_accent_tab() -> None:
 
     st.markdown("### Среднедневной оборот")
 
-    avg_daily_long = build_avg_daily_turnover_summary(df_raw_period, period_start, period_end)
+    avg_daily_long = build_avg_daily_turnover_summary(df_raw_day, d_from, d_to)
     avg_daily_pivot = pivot_avg_daily_turnover_summary(avg_daily_long)
 
     if avg_daily_pivot.empty:
@@ -2088,7 +2088,7 @@ def render_accent_tab() -> None:
             key="accent_avg_daily_mode",
         )
 
-        st.caption(f"Период расчета: {period_start} — {period_end}")
+        st.caption(f"Период расчета: {d_from} — {d_to}")
 
         fig_avg_daily = build_avg_daily_turnover_chart(avg_daily_long, value_mode=avg_mode)
         if fig_avg_daily.data:
@@ -2133,7 +2133,7 @@ def render_accent_tab() -> None:
         st.download_button(
             "Скачать Excel: среднедневной оборот",
             data=xlsx_avg_daily,
-            file_name=f"accent_avg_daily_turnover_{period_kind.lower()}_{period_start}_{period_end}.xlsx",
+            file_name=f"accent_avg_daily_turnover_{d_from}_{d_to}.xlsx"
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             width="stretch",
             key="accent_download_avg_daily",
