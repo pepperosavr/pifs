@@ -811,6 +811,158 @@ def pivot_period_summary(period_df: pd.DataFrame) -> pd.DataFrame:
     pv = pv[ordered].sort_values(["Начало периода", "Фонд"], ascending=[False, True]).reset_index(drop=True)
     return pv
 
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def build_avg_daily_turnover_summary(df_raw: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFrame:
+    if df_raw is None or df_raw.empty:
+        return pd.DataFrame()
+
+    d = df_raw.copy()
+    d = d[(d["tradedate"] >= start_d) & (d["tradedate"] <= end_d)].copy()
+    d["value"] = pd.to_numeric(d["value"], errors="coerce")
+    d = d.dropna(subset=["fund", "mode", "tradedate", "value"]).copy()
+
+    if d.empty:
+        return pd.DataFrame()
+
+    # Дневной оборот по дате / фонду / режиму
+    daily = (
+        d.groupby(["tradedate", "fund", "mode"], as_index=False)
+         .agg(value=("value", "sum"))
+    )
+
+    # Среднедневной оборот по каждому режиму
+    by_mode = (
+        daily.groupby(["fund", "mode"], as_index=False)
+             .agg(
+                 trading_dates=("tradedate", "nunique"),
+                 turnover_total=("value", "sum"),
+                 avg_daily_turnover=("value", "mean"),
+             )
+    )
+
+    # Итого по фонду = суммарный дневной оборот по всем режимам,
+    # затем среднее по дневным значениям
+    total_daily = (
+        daily.groupby(["tradedate", "fund"], as_index=False)
+             .agg(value=("value", "sum"))
+    )
+
+    total = (
+        total_daily.groupby(["fund"], as_index=False)
+                   .agg(
+                       trading_dates=("tradedate", "nunique"),
+                       turnover_total=("value", "sum"),
+                       avg_daily_turnover=("value", "mean"),
+                   )
+    )
+    total["mode"] = "Итого"
+
+    out = pd.concat([by_mode, total], ignore_index=True)
+
+    out = out.rename(columns={
+        "fund": "Фонд",
+        "mode": "Режим торгов",
+        "trading_dates": "Торговых дат",
+        "turnover_total": "Оборот, руб",
+        "avg_daily_turnover": "Среднедневной оборот, руб",
+    })
+
+    out.insert(0, "Начало периода", start_d)
+    out.insert(1, "Конец периода", end_d)
+
+    out["Оборот, руб"] = pd.to_numeric(out["Оборот, руб"], errors="coerce").round(0)
+    out["Среднедневной оборот, руб"] = pd.to_numeric(out["Среднедневной оборот, руб"], errors="coerce").round(0)
+
+    return out.sort_values(["Фонд", "Режим торгов"]).reset_index(drop=True)
+
+
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def pivot_avg_daily_turnover_summary(avg_df: pd.DataFrame) -> pd.DataFrame:
+    if avg_df is None or avg_df.empty:
+        return pd.DataFrame()
+
+    metrics = ["Торговых дат", "Оборот, руб", "Среднедневной оборот, руб"]
+
+    pv = avg_df.pivot_table(
+        index=["Начало периода", "Конец периода", "Фонд"],
+        columns="Режим торгов",
+        values=metrics,
+        aggfunc="first",
+        fill_value=0,
+    )
+
+    pv.columns = [f"{m} — {mode}" for m, mode in pv.columns]
+    pv = pv.reset_index()
+
+    ordered = ["Начало периода", "Конец периода", "Фонд"]
+    mode_order = ["Основной режим", "РПС", "Итого"]
+
+    for m in metrics:
+        for mode in mode_order:
+            col = f"{m} — {mode}"
+            if col in pv.columns:
+                ordered.append(col)
+
+    ordered = [c for c in ordered if c in pv.columns]
+    pv = pv[ordered].sort_values(["Начало периода", "Фонд"], ascending=[False, True]).reset_index(drop=True)
+
+    return pv
+
+
+def build_avg_daily_turnover_chart(avg_long: pd.DataFrame, value_mode: str = "Итого") -> go.Figure:
+    fig = go.Figure()
+    if avg_long is None or avg_long.empty:
+        return fig
+
+    d = avg_long[avg_long["Режим торгов"] == value_mode][["Фонд", "Среднедневной оборот, руб"]].copy()
+    d["Среднедневной оборот, руб"] = pd.to_numeric(d["Среднедневной оборот, руб"], errors="coerce")
+    d = d.dropna(subset=["Среднедневной оборот, руб"]).copy()
+
+    if d.empty:
+        return fig
+
+    d = d.sort_values("Среднедневной оборот, руб", ascending=False).reset_index(drop=True)
+
+    max_val = float(d["Среднедневной оборот, руб"].max())
+    if max_val >= 1e9:
+        divisor, unit, decimals = 1e9, "млрд руб", 2
+    elif max_val >= 1e6:
+        divisor, unit, decimals = 1e6, "млн руб", 2
+    elif max_val >= 1e3:
+        divisor, unit, decimals = 1e3, "тыс руб", 0
+    else:
+        divisor, unit, decimals = 1.0, "руб", 0
+
+    d["value_unit"] = d["Среднедневной оборот, руб"] / divisor
+
+    fig = px.bar(
+        d,
+        x="Фонд",
+        y="value_unit",
+        text="value_unit",
+        labels={"value_unit": f"Среднедневной оборот, {unit}", "Фонд": "Фонд"},
+    )
+
+    fig.update_layout(
+        separators=". ",
+        title=f"Среднедневной оборот ({value_mode.lower() if value_mode != 'Итого' else 'итого'})",
+        xaxis_title=None,
+        yaxis_title=None,
+        margin=dict(l=30, r=30, t=60, b=30),
+    )
+
+    fig.update_traces(
+        texttemplate=f"%{{y:,.{decimals}f}}",
+        textposition="outside",
+        hovertemplate=(
+            "Фонд: %{x}<br>"
+            f"Среднедневной оборот: %{{y:,.{decimals}f}} {unit}<br>"
+            "<extra></extra>"
+        ),
+    )
+
+    return fig
+
 def _fmt_ru_1(x: float) -> str:
     return f"{x:.1f}".replace(".", ",")
 
@@ -1918,6 +2070,73 @@ def render_accent_tab() -> None:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             width="stretch",
             key="accent_download_summary",
+        )
+
+    st.markdown("### Среднедневной оборот")
+
+    avg_daily_long = build_avg_daily_turnover_summary(df_raw_period, period_start, period_end)
+    avg_daily_pivot = pivot_avg_daily_turnover_summary(avg_daily_long)
+
+    if avg_daily_pivot.empty:
+        st.warning("Не удалось построить среднедневной оборот за выбранный период.")
+    else:
+        avg_mode = st.radio(
+            "Среднедневной оборот: режим для графика",
+            options=["Основной режим", "РПС", "Итого"],
+            horizontal=True,
+            index=2,
+            key="accent_avg_daily_mode",
+        )
+
+        st.caption(f"Период расчета: {period_start} — {period_end}")
+
+        fig_avg_daily = build_avg_daily_turnover_chart(avg_daily_long, value_mode=avg_mode)
+        if fig_avg_daily.data:
+            st.plotly_chart(fig_avg_daily, width="stretch")
+        else:
+            st.info("Нет данных для графика среднедневного оборота.")
+
+        with st.popover("Выбрать колонки для таблицы среднедневного оборота"):
+            all_cols = avg_daily_pivot.columns.tolist()
+            default_cols = [c for c in all_cols if c in [
+                "Начало периода",
+                "Конец периода",
+                "Фонд",
+                f"Торговых дат — {avg_mode}",
+                f"Оборот, руб — {avg_mode}",
+                f"Среднедневной оборот, руб — {avg_mode}",
+            ]]
+            if not default_cols:
+                default_cols = all_cols
+
+            selected_avg_cols = st.multiselect(
+                "Колонки",
+                options=all_cols,
+                default=default_cols,
+                key="accent_selected_avg_daily_cols",
+            )
+
+        avg_daily_show = avg_daily_pivot[selected_avg_cols].copy() if selected_avg_cols else avg_daily_pivot.copy()
+
+        fmt_avg = {}
+        for c in avg_daily_show.columns:
+            if "Торговых дат" in c or "Оборот" in c:
+                fmt_avg[c] = "{:.0f}"
+
+        st.dataframe(
+            avg_daily_show.style.format(fmt_avg),
+            width="stretch",
+            hide_index=True,
+        )
+
+        xlsx_avg_daily = df_to_xlsx_bytes(avg_daily_show, sheet_name="Среднедневной оборот")
+        st.download_button(
+            "Скачать Excel: среднедневной оборот",
+            data=xlsx_avg_daily,
+            file_name=f"accent_avg_daily_turnover_{period_kind.lower()}_{period_start}_{period_end}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width="stretch",
+            key="accent_download_avg_daily",
         )
 
     st.markdown("### Детальные торги по дням")
