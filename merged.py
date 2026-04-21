@@ -941,6 +941,7 @@ def build_avg_daily_turnover_chart(avg_long: pd.DataFrame, value_mode: str = "И
         y="value_unit",
         text="value_unit",
         labels={"value_unit": f"Среднедневной оборот, {unit}", "Фонд": "Фонд"},
+        color_discrete_sequence=["#7A1F1F"],
     )
 
     fig.update_layout(
@@ -2072,7 +2073,45 @@ def render_accent_tab() -> None:
             key="accent_download_summary",
         )
 
-    st.markdown("### Среднедневной оборот")
+    st.markdown("### Детальные торги по дням")
+    accent_daily = build_accent_daily_table(df_raw_day)
+
+    if accent_daily.empty:
+        st.warning("Не удалось построить детальную таблицу.")
+    else:
+        mode_options = ["Все режимы"] + accent_daily["Режим торгов"].dropna().unique().tolist()
+        selected_mode = st.radio(
+            "Показывать в дневной таблице",
+            options=mode_options,
+            horizontal=True,
+            key="accent_daily_mode",
+        )
+
+        if selected_mode != "Все режимы":
+            accent_daily_show = accent_daily[accent_daily["Режим торгов"] == selected_mode].copy()
+        else:
+            accent_daily_show = accent_daily.copy()
+
+        accent_daily_show = accent_daily_show.reset_index(drop=True)
+
+        st.dataframe(
+            accent_daily_show,
+            width="stretch",
+            hide_index=True,
+            column_config={"_index": None},
+        )
+
+        xlsx_daily = df_to_xlsx_bytes(accent_daily_show, sheet_name="Детальные торги")
+        st.download_button(
+            "Скачать Excel: детальные торги",
+            data=xlsx_daily,
+            file_name=f"accent_daily_{d_from}_{d_to}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width="stretch",
+            key="accent_download_daily",
+        )
+
+ st.markdown("### Среднедневной оборот")
 
     avg_daily_long = build_avg_daily_turnover_summary(df_raw_day, d_from, d_to)
     avg_daily_pivot = pivot_avg_daily_turnover_summary(avg_daily_long)
@@ -2137,44 +2176,6 @@ def render_accent_tab() -> None:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             width="stretch",
             key="accent_download_avg_daily",
-        )
-
-    st.markdown("### Детальные торги по дням")
-    accent_daily = build_accent_daily_table(df_raw_day)
-
-    if accent_daily.empty:
-        st.warning("Не удалось построить детальную таблицу.")
-    else:
-        mode_options = ["Все режимы"] + accent_daily["Режим торгов"].dropna().unique().tolist()
-        selected_mode = st.radio(
-            "Показывать в дневной таблице",
-            options=mode_options,
-            horizontal=True,
-            key="accent_daily_mode",
-        )
-
-        if selected_mode != "Все режимы":
-            accent_daily_show = accent_daily[accent_daily["Режим торгов"] == selected_mode].copy()
-        else:
-            accent_daily_show = accent_daily.copy()
-
-        accent_daily_show = accent_daily_show.reset_index(drop=True)
-
-        st.dataframe(
-            accent_daily_show,
-            width="stretch",
-            hide_index=True,
-            column_config={"_index": None},
-        )
-
-        xlsx_daily = df_to_xlsx_bytes(accent_daily_show, sheet_name="Детальные торги")
-        st.download_button(
-            "Скачать Excel: детальные торги",
-            data=xlsx_daily,
-            file_name=f"accent_daily_{d_from}_{d_to}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            width="stretch",
-            key="accent_download_daily",
         )
 
 @st.cache_data(ttl=24 * 60 * 60)
