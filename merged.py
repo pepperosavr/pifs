@@ -2133,7 +2133,7 @@ def render_accent_tab() -> None:
         st.download_button(
             "Скачать Excel: среднедневной оборот",
             data=xlsx_avg_daily,
-            file_name=f"accent_avg_daily_turnover_{d_from}_{d_to}.xlsx"
+            file_name=f"accent_avg_daily_turnover_{d_from}_{d_to}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             width="stretch",
             key="accent_download_avg_daily",
