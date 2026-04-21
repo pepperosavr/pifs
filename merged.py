@@ -2111,7 +2111,7 @@ def render_accent_tab() -> None:
             key="accent_download_daily",
         )
 
- st.markdown("### Среднедневной оборот")
+     st.markdown("### Среднедневной оборот")
 
     avg_daily_long = build_avg_daily_turnover_summary(df_raw_day, d_from, d_to)
     avg_daily_pivot = pivot_avg_daily_turnover_summary(avg_daily_long)
